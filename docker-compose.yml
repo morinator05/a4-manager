@@ -21,12 +21,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # All settings from .env; DATABASE_URL below overrides the localhost one in there.
+    env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://a4:${POSTGRES_PASSWORD}@db:5432/a4
-      SECRET_KEY: ${SECRET_KEY:-}
     ports:
       - "8000:8000"
-    profiles: ["app"]
 
 volumes:
   pgdata:

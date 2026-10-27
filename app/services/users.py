@@ -1,10 +1,12 @@
 """Residents: creating, pausing, moving out, and away periods."""
 
+import re
 from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models import Assignment, AwayPeriod, Slot, Status, User
 from app.services import duties, scheduling
 from app.services.auth import MIN_PASSWORD_LENGTH, PASSWORD_TOO_SHORT, hash_password
@@ -12,6 +14,24 @@ from app.services.auth import MIN_PASSWORD_LENGTH, PASSWORD_TOO_SHORT, hash_pass
 
 class UserError(Exception):
     """Invalid input; the message is German and shown to the user as is."""
+
+
+# Building letter, floor digit, room 01-99 on that floor: A403.
+ROOM_PATTERN = re.compile(r"[A-Z][0-9](0[1-9]|[1-9][0-9])")
+
+
+def check_room(room_number: str) -> str:
+    """The room number, trimmed and upper case.
+
+    Raises:
+        UserError: if it isn't like A403 (letter, floor, room 01-99).
+    """
+    room_number = room_number.strip().upper()
+    if not ROOM_PATTERN.fullmatch(room_number):
+        raise UserError(
+            f"Zimmer „{room_number}“ ungültig: Buchstabe, Stockwerk, Zimmer 01–99, z.B. A403"
+        )
+    return room_number
 
 
 async def list_users(session: AsyncSession) -> list[User]:
@@ -32,18 +52,20 @@ async def create(
     """Add a resident. Their duty balance starts at zero.
 
     Raises:
-        UserError: if a field is empty, the password is too short or the username is taken.
+        UserError: if a field is empty, the room number or password is invalid, or the
+            username is taken.
     """
     username = username.strip().lower()
     if not (name.strip() and room_number.strip() and username and password):
         raise UserError("Alle Felder müssen ausgefüllt sein")
+    room_number = check_room(room_number)
     if len(password) < MIN_PASSWORD_LENGTH:
         raise UserError(PASSWORD_TOO_SHORT)
     if await session.scalar(select(User).where(User.username == username)):
         raise UserError(f"Benutzername „{username}“ ist schon vergeben")
     user = User(
         name=name.strip(),
-        room_number=room_number.strip(),
+        room_number=room_number,
         username=username,
         password_hash=hash_password(password),
         is_admin=is_admin,
@@ -52,6 +74,28 @@ async def create(
     session.add(user)
     await session.flush()
     return user
+
+
+async def create_initial_admin(session: AsyncSession) -> User | None:
+    """Create the Flursprecher from the `ADMIN_*` settings, if set and there are no users yet.
+
+    Only an empty database counts, so an admin deleted later doesn't come back on restart.
+
+    Raises:
+        UserError: if the settings are incomplete or invalid (e.g. the password is too short).
+    """
+    if not settings.admin_username:
+        return None
+    if await session.scalar(select(User.id).limit(1)) is not None:
+        return None
+    return await create(
+        session,
+        name=settings.admin_name,
+        room_number=settings.admin_room,
+        username=settings.admin_username,
+        password=settings.admin_password,
+        is_admin=True,
+    )
 
 
 async def set_active(session: AsyncSession, user: User, active: bool, today: date) -> None:

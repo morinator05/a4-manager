@@ -10,7 +10,8 @@
 
 {% for duty in Duty %}
 <h2>{{ duty.label }}</h2>
-<div class="table-wrap"><table>
+<div class="table-wrap"><table class="history">
+  <colgroup><col class="col-date"><col><col>{% if user.is_admin %}<col class="col-action">{% endif %}</colgroup>
   <tr><th>Datum</th><th>Eingeteilt</th><th>Erledigt von</th>{% if user.is_admin %}<th></th>{% endif %}</tr>
   {% for slot in slots if slot.duty == duty %}
     {% set claimed = slot.assignments|selectattr("status", "equalto", Status.done)|first %}
@@ -44,7 +45,7 @@
       {% endif %}
     </tr>
   {% else %}
-    <tr><td class="muted">Keine Dienste in diesem Zeitraum.</td></tr>
+    <tr><td class="muted" colspan="{{ 4 if user.is_admin else 3 }}">Keine Dienste in diesem Zeitraum.</td></tr>
   {% endfor %}
 </table></div>
 {% endfor %}
