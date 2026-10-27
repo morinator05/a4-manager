@@ -20,15 +20,15 @@
           {% if slot.is_penalty %}<span class="penalty">(Strafe)</span>{% endif %}</td>
       <td>
         {% for a in slot.assignments %}
-          <div class="assignee">{{ a.user.display_name if a.user else "ehemalig" }} {% include "partials/status.html" %}</div>
+          <div class="assignee"><span>{{ person(a.user) }}</span> {% include "partials/status.html" %}</div>
         {% else %}<span class="muted">–</span>{% endfor %}
       </td>
       <td>
         {% set c = claimed or disputed %}
         {% if c %}
-          <strong>{{ c.user.display_name if c.user else "ehemalig" }}</strong>
+          <strong>{{ person(c.user) }}</strong>
           <div class="muted">eingetragen {{ c.completed_at|date_time }}
-            {% if c.completed_by and c.completed_by_id != c.user_id %}durch {{ c.completed_by.display_name }}{% endif %}</div>
+            {% if c.completed_by and c.completed_by_id != c.user_id %}durch {{ person(c.completed_by) }}{% endif %}</div>
           {% if c.disputed_at %}<div class="penalty">beanstandet {{ c.disputed_at|date_time }}</div>{% endif %}
         {% else %}<span class="muted">niemand</span>{% endif %}
       </td>

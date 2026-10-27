@@ -115,13 +115,13 @@ class SlotEligible(Base):
     """Users that were available for a slot; each accrues an equal share of its expected work."""
 
     __tablename__ = "slot_eligible"
+    __table_args__ = (UniqueConstraint("slot_id", "user_id"),)
 
-    slot_id: Mapped[int] = mapped_column(
-        ForeignKey("slots.id", ondelete="CASCADE"), primary_key=True
-    )
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
-    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    slot_id: Mapped[int] = mapped_column(ForeignKey("slots.id", ondelete="CASCADE"), index=True)
+    # NULL once the user was deleted (moved out). The row stays so the others' shares of
+    # past slots don't grow: nobody inherits the work of someone who moved out.
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
 
     slot: Mapped[Slot] = relationship(back_populates="eligible")
 

@@ -148,7 +148,7 @@ async def _assign_from_eligible(
     """Put the `count` most indebted eligible users that aren't on `slot` yet on it."""
     balances = await load_balances(session, slot.duty)
     taken = {a.user_id for a in slot.assignments}
-    pool = [e.user_id for e in slot.eligible if e.user_id not in taken]
+    pool = [e.user_id for e in slot.eligible if e.user_id is not None and e.user_id not in taken]
     for uid in scheduling.pick(balances, pool, count, rooms):
         slot.assignments.append(Assignment(user_id=uid))
     await session.flush()

@@ -3,9 +3,9 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AwayPeriod, User
+from app.models import Assignment, AwayPeriod, Slot, Status, User
 from app.services import duties, scheduling
-from app.services.auth import hash_password
+from app.services.auth import MIN_PASSWORD_LENGTH, PASSWORD_TOO_SHORT, hash_password
 
 
 class UserError(Exception):
@@ -29,6 +29,8 @@ async def create(
     username = username.strip().lower()
     if not (name.strip() and room_number.strip() and username and password):
         raise UserError("Alle Felder müssen ausgefüllt sein")
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise UserError(PASSWORD_TOO_SHORT)
     if await session.scalar(select(User).where(User.username == username)):
         raise UserError(f"Benutzername „{username}“ ist schon vergeben")
     user = User(
@@ -54,10 +56,26 @@ async def set_active(session: AsyncSession, user: User, active: bool, today: dat
 
 
 async def delete(session: AsyncSession, user: User, today: date) -> None:
+    """Moving out. The person's history stays anonymised; whoever moves in next is a new
+    user and starts from zero (no debt, no strikes)."""
+    # Open penalty weeks go with the person, so those weeks get a regular Mülldienst again.
+    open_penalties = await session.scalars(
+        select(Slot)
+        .join(Slot.assignments)
+        .where(
+            Slot.is_penalty.is_(True),
+            Slot.end_date >= today,
+            Assignment.user_id == user.id,
+            Assignment.status == Status.pending,
+        )
+    )
+    for slot in open_penalties.all():
+        await session.delete(slot)
     await session.delete(user)
     await session.flush()
     session.expire_all()
     await duties.reconcile(session, today)
+    await duties.fill_current(session, today)
 
 
 async def add_away(session: AsyncSession, user: User, start: date, end: date, today: date) -> None:

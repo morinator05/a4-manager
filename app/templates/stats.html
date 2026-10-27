@@ -13,7 +13,7 @@
     {% set kb = balances[Duty.kitchen].get(u.id) %}
     {% set tb = balances[Duty.trash].get(u.id) %}
     <tr{% if not u.active %} class="muted"{% endif %}>
-      <td>{{ u.display_name }}{% if not u.active %} (inaktiv){% endif %}</td>
+      <td>{{ person(u) }}{% if not u.active %} (inaktiv){% endif %}</td>
       <td>{{ counts.get((u.id, Duty.kitchen, Status.done), 0) }}</td>
       <td>{{ counts.get((u.id, Duty.kitchen, Status.missed), 0) }}</td>
       <td>{{ "%.2f"|format(kb.debt|float) if kb else "0.00" }}</td>

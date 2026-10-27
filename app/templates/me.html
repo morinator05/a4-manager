@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>{{ user.display_name }}</h1>
+<h1>{{ person(user) }}</h1>
 {% if not user.active %}<p class="flash error">Du bist inaktiv und wirst nicht eingeteilt.</p>{% endif %}
 
 <div class="grid">
@@ -26,7 +26,7 @@
     <h2>Passwort ändern</h2>
     <form method="post" action="/me/password" class="row">
       <label>Altes Passwort <input type="password" name="old_password" autocomplete="current-password" required></label>
-      <label>Neues Passwort <input type="password" name="new_password" autocomplete="new-password" minlength="6" required></label>
+      <label>Neues Passwort <input type="password" name="new_password" autocomplete="new-password" minlength="{{ min_password_length }}" required></label>
       <button>Ändern</button>
     </form>
   </section>

@@ -8,9 +8,12 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.main import app
+from app.web import person_html
 from app.models import Assignment, Duty, Slot, Status
 from app.services import duties, jobs, strikes, users
 from app.services.duties import DutyError
+from app.services.login_throttle import LoginThrottle
+from app.services.users import UserError
 
 MONDAY = date(2026, 11, 2)
 
@@ -304,7 +307,7 @@ async def test_history_page_and_dispute(session, client):
     assert (await client.get("/history")).status_code == 303  # login required
     await login(client, "p2")
     r = await client.get("/history")
-    assert r.status_code == 200 and p1.display_name in r.text and "Beanstanden" not in r.text
+    assert r.status_code == 200 and str(person_html(p1)) in r.text and "Beanstanden" not in r.text
     assert (await client.post(f"/admin/assignments/{first.id}/dispute")).status_code == 403
 
     await client.post("/logout")
@@ -354,3 +357,90 @@ async def test_web_errors_do_not_break_the_page(session, client):
     await login(client, "p1")
     r = await client.post("/admin/assignments/999999/excuse")
     assert r.status_code == 303 and r.headers["location"] == "/admin"
+
+
+async def test_login_is_blocked_after_too_many_failures(session, client, monkeypatch):
+    monkeypatch.setattr("app.web.login_throttle", LoginThrottle(max_failures=3))
+    await make_users(session, n=2)
+    for _ in range(3):
+        r = await client.post("/login", data={"username": "p2", "password": "wrong"})
+        assert "Benutzername oder Passwort falsch" in (await client.get(r.headers["location"])).text
+
+    # Even the right password is refused while blocked.
+    r = await client.post("/login", data={"username": "p2", "password": "secret123"})
+    assert "Zu viele Fehlversuche" in (await client.get(r.headers["location"])).text
+    assert (await client.get("/me")).status_code == 303
+    # Other users can still log in.
+    await login(client, "p1")
+    assert (await client.get("/me")).status_code == 200
+
+
+async def test_short_passwords_are_rejected(session):
+    with pytest.raises(UserError):
+        await users.create(session, name="A", room_number="1", username="a", password="short")
+
+
+def test_login_throttle_window():
+    now = [0.0]
+    throttle = LoginThrottle(max_failures=2, window_seconds=60, clock=lambda: now[0])
+    throttle.record_failure("k")
+    throttle.record_failure("k")
+    assert throttle.is_blocked("k")
+    now[0] = 61
+    assert not throttle.is_blocked("k")
+    throttle.record_failure("k")
+    throttle.reset("k")
+    assert not throttle.is_blocked("k")
+
+
+async def test_moving_out_does_not_change_the_others_balance(session):
+    people = await make_users(session, n=5)
+    day = MONDAY
+    for _ in range(10):
+        await jobs.daily_tick(session, at(day))
+        slot = await duties.get_slot(session, Duty.kitchen, day)
+        claim = await duties.get_assignment(session, slot.assignments[0].id)
+        await duties.mark_done(session, claim, claim.user, at(day, 20))
+        await session.commit()
+        day += timedelta(days=1)
+
+    leaving, staying = people[1], [p for p in people if p is not people[1]]
+    staying_ids = [p.id for p in staying]
+    before = await duties.load_balances(session, Duty.kitchen)
+    # Move out on the last scheduled day, so no new slot changes the balances.
+    await users.delete(session, leaving, day - timedelta(days=1))
+    await session.commit()
+    after = await duties.load_balances(session, Duty.kitchen)
+    assert [after[uid].debt for uid in staying_ids] == [before[uid].debt for uid in staying_ids]
+
+    # The new resident of that room starts with a clean slate.
+    newbie = await users.create(
+        session, name="Neu", room_number=leaving.room_number, username="neu", password="secret123"
+    )
+    await session.commit()
+    balances = await duties.load_balances(session, Duty.kitchen)
+    assert newbie.id not in balances
+    assert await strikes.active_strikes(session, newbie.id) == []
+
+
+async def test_moving_out_drops_open_penalty_week(session):
+    people = await make_users(session)
+    leaving = people[1]
+    await jobs.daily_tick(session, at(MONDAY))
+    for _ in range(3):
+        await strikes.issue(session, user_id=leaving.id, reason="x", today=MONDAY)
+    await session.commit()
+
+    await users.delete(session, leaving, MONDAY)
+    await session.commit()
+    await jobs.daily_tick(session, at(MONDAY + timedelta(days=7)))
+    slot = await duties.get_slot(session, Duty.trash, MONDAY + timedelta(days=7))
+    assert not slot.is_penalty and len(slot.assignments) == 1
+
+
+async def test_own_name_is_highlighted(session, client):
+    people = await make_users(session, n=3)
+    await login(client, "p2")
+    text = (await client.get("/stats")).text
+    assert str(person_html(people[1], is_me=True)) in text
+    assert str(person_html(people[0])) in text

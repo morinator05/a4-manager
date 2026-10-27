@@ -5,6 +5,8 @@ from typing import Annotated
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from jinja2 import pass_context
+from markupsafe import Markup
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -14,13 +16,41 @@ from app.deps import AdminUser, CurrentUser, OptionalUser, Session
 from app.models import Assignment, AwayPeriod, Duty, Slot, Status, Strike, User
 from app.services import auth, duties, jobs, strikes, users
 from app.services.duties import DutyError
+from app.services.login_throttle import login_throttle
 from app.services.users import UserError
 
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
+
+
+def person_html(user: User | None, is_me: bool = False) -> Markup:
+    """A person as HTML: the first name stands out, the room is a quieter tag after it.
+
+    `is_me` highlights the logged-in user's own entry, so they find themselves quickly.
+    """
+    if user is None:
+        return Markup('<span class="muted">ehemalig</span>')
+    html = Markup('<span class="person-name">{}</span> <span class="room">{}</span>').format(
+        user.first_name, user.room_number
+    )
+    if is_me:
+        return Markup('<span class="me">{}</span>').format(html)
+    return html
+
+
+@pass_context
+def person(context, user: User | None) -> Markup:
+    """`person_html` for templates: takes the logged-in user from the page's `user`."""
+    viewer = context.get("user")
+    is_me = user is not None and viewer is not None and user.id == viewer.id
+    return person_html(user, is_me)
+
+
+templates.env.globals["person"] = person
 templates.env.globals["Duty"] = Duty
 templates.env.globals["Status"] = Status
 templates.env.globals["strike_threshold"] = settings.strike_threshold
+templates.env.globals["min_password_length"] = auth.MIN_PASSWORD_LENGTH
 templates.env.filters["short_date"] = lambda d: f"{d:%d.%m.}" if d else ""
 templates.env.filters["date_time"] = (
     lambda d: f"{d.astimezone(settings.tz):%d.%m.%Y %H:%M}" if d else ""
@@ -29,7 +59,8 @@ templates.env.filters["weekday"] = lambda d: ["Mo", "Di", "Mi", "Do", "Fr", "Sa"
 
 
 def flash(request: Request, message: str, kind: str = "ok") -> None:
-    request.session.setdefault("flash", []).append([kind, message])
+    # Assign a new list: the session only notices assignments, not in-place changes.
+    request.session["flash"] = [*request.session.get("flash", []), [kind, message]]
 
 
 def render(request: Request, name: str, user: User | None, **ctx) -> HTMLResponse:
@@ -81,10 +112,18 @@ async def login(
     password: Annotated[str, Form()],
     next: Annotated[str, Form()] = "/",
 ):
+    client_ip = request.client.host if request.client else "unknown"
+    throttle_key = f"{username.strip().lower()}@{client_ip}"
+    if login_throttle.is_blocked(throttle_key):
+        flash(request, "Zu viele Fehlversuche, bitte in 15 Minuten nochmal versuchen", "error")
+        return redirect(f"/login?next={safe_next(next)}")
+
     user = await auth.authenticate(session, username, password)
     if user is None:
+        login_throttle.record_failure(throttle_key)
         flash(request, "Benutzername oder Passwort falsch", "error")
         return redirect(f"/login?next={safe_next(next)}")
+    login_throttle.reset(throttle_key)
     request.session["user_id"] = user.id
     return redirect(safe_next(next))
 
@@ -139,7 +178,9 @@ async def mark_done(request: Request, session: Session, user: CurrentUser, assig
     if is_card_request:
         slot = await duties.get_slot(session, a.slot.duty, a.slot.start_date)
         return templates.TemplateResponse(
-            request, "partials/duty_card.html", duty_card_ctx(slot, slot.duty, user)
+            request,
+            "partials/duty_card.html",
+            {**duty_card_ctx(slot, slot.duty, user), "user": user},
         )
     flash(request, "Als erledigt eingetragen")
     return redirect(safe_next(request.query_params.get("next")))
@@ -214,8 +255,8 @@ async def change_password(
 ):
     if not auth.verify_password(old_password, user.password_hash):
         flash(request, "Altes Passwort falsch", "error")
-    elif len(new_password) < 6:
-        flash(request, "Neues Passwort muss mindestens 6 Zeichen haben", "error")
+    elif len(new_password) < auth.MIN_PASSWORD_LENGTH:
+        flash(request, auth.PASSWORD_TOO_SHORT, "error")
     else:
         user.password_hash = auth.hash_password(new_password)
         await session.commit()
@@ -360,6 +401,9 @@ async def admin_edit_user(
     is_admin: Annotated[bool, Form()] = False,
 ):
     target = await _get_user(session, user_id)
+    if password and len(password) < auth.MIN_PASSWORD_LENGTH:
+        flash(request, auth.PASSWORD_TOO_SHORT, "error")
+        return redirect("/admin")
     target.name = name.strip() or target.name
     target.room_number = room_number.strip() or target.room_number
     if target.id != user.id:

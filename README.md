@@ -32,7 +32,10 @@ The logic is in `app/services/scheduling.py` (pure functions, see `tests/test_sc
   Mülldienst, and the penalty doesn't count toward fairness. The 3 strikes are then marked "abgearbeitet".
 - If someone marks themselves away during a duty that is still open, they are replaced automatically.
   The same happens when they are deactivated or deleted.
-- Deactivate residents to pause them. Delete them when they move out. Their past duties stay in the history.
+- Deactivate residents to pause them. Delete them when they move out. Their past duties stay in the history
+  (as "ehemalig") and still count for the past, so nobody else inherits their share. Open penalty weeks are dropped.
+- Someone new moves into a room: add them as a new resident (don't rename the old account). They start at
+  debt 0 with no strikes, independent of what the previous resident did.
 
 A daily job runs at 00:05 and 12:05 (Europe/Berlin). It flags missed duties, then picks today's kitchen people
 and this week's trash person. The Flursprecher page can also trigger it.
@@ -40,7 +43,7 @@ and this week's trash person. The Flursprecher page can also trigger it.
 ## Setup
 
 ```bash
-cp .env.example .env               # set SECRET_KEY
+cp .env.example .env               # set SECRET_KEY (openssl rand -hex 32), the app won't start without it
 docker compose up -d db
 uv sync
 uv run alembic upgrade head

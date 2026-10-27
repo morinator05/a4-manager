@@ -2,6 +2,7 @@ import os
 
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://a4:a4@localhost:5432/a4_test")
 os.environ["RUN_SCHEDULER"] = "false"
+os.environ.setdefault("SECRET_KEY", "test-secret-key-that-is-long-enough-0123456789")
 
 import asyncpg  # noqa: E402
 import pytest  # noqa: E402

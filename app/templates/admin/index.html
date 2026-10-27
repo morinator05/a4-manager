@@ -8,7 +8,7 @@
     <label>Name <input name="name" required></label>
     <label>Zimmer <input name="room_number" size="6" placeholder="z.B. A404" required></label>
     <label>Benutzername <input name="username" required></label>
-    <label>Startpasswort <input name="password" required></label>
+    <label>Startpasswort <input name="password" minlength="{{ min_password_length }}" required></label>
     <label><span><input type="checkbox" name="is_admin" value="true"> Flursprecher</span></label>
     <button>Hinzufügen</button>
   </form>
@@ -21,15 +21,17 @@
     <tr>
       <td>
         <details>
-          <summary><strong>{{ u.display_name }}</strong> <span class="muted">{{ u.name }} · @{{ u.username }}</span></summary>
+          <summary><strong>{{ person(u) }}</strong> <span class="muted">{{ u.name }} · @{{ u.username }}</span></summary>
           <form method="post" action="/admin/users/{{ u.id }}/edit" class="row">
             <label>Name <input name="name" value="{{ u.name }}"></label>
             <label>Zimmer <input name="room_number" value="{{ u.room_number }}" size="6"></label>
-            <label>Neues Passwort <input name="password" placeholder="unverändert"></label>
+            <label>Neues Passwort <input name="password" minlength="{{ min_password_length }}" placeholder="unverändert"></label>
             <label><span><input type="checkbox" name="is_admin" value="true" {% if u.is_admin %}checked{% endif %}
                    {% if u.id == user.id %}disabled{% endif %}> Flursprecher</span></label>
             <button>Speichern</button>
           </form>
+          <p class="muted">Neue Person im Zimmer? Nicht hier umbenennen, sondern den alten Bewohner
+            löschen und die neue Person hinzufügen. Sonst übernimmt sie Verlauf und Strikes.</p>
         </details>
       </td>
       <td>{% if u.active %}aktiv{% else %}<span class="muted">inaktiv</span>{% endif %}
@@ -68,9 +70,9 @@
   {% for s in strikes %}
     <tr>
       <td>{{ s.created_at|date_time }}</td>
-      <td>{{ s.user.display_name }}</td>
+      <td>{{ person(s.user) }}</td>
       <td>{{ s.reason }}</td>
-      <td>{{ "automatisch" if s.auto else (s.issued_by.display_name if s.issued_by else "–") }}</td>
+      <td>{{ "automatisch" if s.auto else (person(s.issued_by) if s.issued_by else "–") }}</td>
       <td>
         {% if s.revoked_at %}<span class="badge s-excused">zurückgenommen</span>
         {% elif s.redeemed_by_assignment_id %}<span class="badge s-excused">abgearbeitet</span>
@@ -93,7 +95,7 @@
       <tr>
         <td>{{ slot.start_date|weekday }} {{ slot.start_date|short_date }}{% if slot.end_date != slot.start_date %}–{{ slot.end_date|short_date }}{% endif %}</td>
         <td>{{ slot.duty.label }}{% if slot.is_penalty %} <span class="penalty">(Strafe)</span>{% endif %}</td>
-        <td>{{ a.user.display_name if a.user else "ehemalig" }}</td>
+        <td>{{ person(a.user) }}</td>
         <td>{% include "partials/status.html" %}</td>
         <td style="white-space:nowrap">
           {% if not slot_done %}

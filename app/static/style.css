@@ -1,69 +1,107 @@
 :root {
-  /* Pastel blue theme. Every colour has a "-soft" variant used as a background tint. */
-  --bg: #eef4fb; --card: #fbfdff; --text: #1f2e45; --muted: #607590; --border: #d3e1f1;
-  --accent: #3f73b8; --accent-soft: #d3e5f9; --accent-strong: #1f4f8f; --accent-line: #a9c8ec;
-  --ok: #2b7a4b; --ok-soft: #dcf1e4; --warn: #8f6212; --warn-soft: #fbf0d6;
-  --bad: #b03a3a; --bad-soft: #fbe3e3; --neutral: #5d6b80; --neutral-soft: #e6ecf4;
+  /* Pastel blue theme. Each colour has a "-soft" fill and a "-line" border, so pastel
+     elements still have a clear edge. */
+  --bg: #edf3fb; --card: #ffffff; --card-alt: #f3f7fd; --text: #1c2b42; --muted: #5c6f8a;
+  --border: #c6d7ec; --shadow: 0 1px 3px rgba(31, 63, 115, .10);
+  --nav-bg: #d6e6f8; --nav-hover: #c3d9f3;
+  --accent: #2f66b0; --accent-soft: #cfe1f7; --accent-strong: #173f73; --accent-line: #8fb3e2;
+  --ok: #22703f; --ok-soft: #d9f2e2; --ok-line: #9fd4b3;
+  --warn: #84570b; --warn-soft: #fcefd2; --warn-line: #ebcb86;
+  --bad: #a83232; --bad-soft: #fbe1e1; --bad-line: #eba9a9;
+  --neutral: #56657c; --neutral-soft: #e7edf5; --neutral-line: #c4cfde;
+  --room: #4a5b74; --room-soft: #dfe7f2;
+  --me: #6b46c1; --me-room: #ebe3fb;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #121a26; --card: #1a2433; --text: #e2ebf7; --muted: #93a6bf; --border: #2b3a50;
-    --accent: #9cc4f2; --accent-soft: #284466; --accent-strong: #d6e7fb; --accent-line: #3c5f8a;
-    --ok: #9adbb3; --ok-soft: #1e3a2c; --warn: #f0cf8c; --warn-soft: #3c3220;
-    --bad: #f2a7a7; --bad-soft: #432427; --neutral: #a9b6c8; --neutral-soft: #253244;
+    --bg: #111925; --card: #19222f; --card-alt: #1e2938; --text: #e2ebf7; --muted: #94a7c0;
+    --border: #2f4058; --shadow: 0 1px 3px rgba(0, 0, 0, .35);
+    --nav-bg: #1d2d44; --nav-hover: #284066;
+    --accent: #9cc4f2; --accent-soft: #284466; --accent-strong: #dbe9fb; --accent-line: #4a72a3;
+    --ok: #9adbb3; --ok-soft: #1c3a2a; --ok-line: #3a6b4e;
+    --warn: #f0cf8c; --warn-soft: #3a311e; --warn-line: #6e5a2e;
+    --bad: #f2a7a7; --bad-soft: #432427; --bad-line: #7a3f44;
+    --neutral: #a9b6c8; --neutral-soft: #253244; --neutral-line: #3d4d64;
+    --room: #b3c2d6; --room-soft: #2a3648;
+    --me: #c4b1f6; --me-room: #382d57;
     color-scheme: dark;
   }
 }
-* { box-sizing: border-box; }
+/* Square corners everywhere, also on browser defaults like buttons and date fields. */
+* { box-sizing: border-box; border-radius: 0; }
 body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--text); }
 main { max-width: 960px; margin: 0 auto; padding: 1rem; }
-nav { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; padding: .75rem 1rem;
-      background: var(--card); border-bottom: 1px solid var(--border); }
-nav .brand { font-weight: 700; }
-nav a { color: var(--text); text-decoration: none; }
-nav form { margin: 0; }
-nav .nav-user { color: var(--muted); font-size: .9em; margin-left: auto; }
 a { color: var(--accent); }
 h1 { font-size: 1.5rem; margin: .5rem 0 1rem; }
 h2 { font-size: 1.15rem; margin: 1.5rem 0 .5rem; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+nav { display: flex; flex-wrap: wrap; gap: .25rem; align-items: center; padding: .5rem 1rem;
+      background: var(--nav-bg); border-bottom: 1px solid var(--accent-line); }
+nav a { color: var(--accent-strong); text-decoration: none; padding: .3rem .6rem; }
+nav a:hover { background: var(--nav-hover); }
+nav .brand { font-weight: 700; margin-right: .5rem; }
+nav form { margin: 0; }
+nav .nav-user { color: var(--muted); font-size: .9em; margin-left: auto; padding: 0 .5rem; }
+
 .grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
-.card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; }
+.card { background: var(--card); border: 1px solid var(--border); padding: 1rem;
+        box-shadow: var(--shadow); }
 .card h2 { margin-top: 0; }
+.muted { color: var(--muted); font-size: .9em; }
+.penalty { color: var(--bad); font-weight: 600; }
+
+/* People: the name comes first, the room is a smaller, quieter tag after it. */
+.person-name { font-weight: 600; }
+.room { display: inline-block; font-size: .78em; font-weight: 500; line-height: 1.4;
+        padding: 0 .4em; vertical-align: middle;
+        color: var(--room); background: var(--room-soft); white-space: nowrap; }
+/* The logged-in user's own name, so you spot yourself at a glance. */
+.me { color: var(--me); }
+.me .room { color: var(--me); background: var(--me-room); }
 .person { display: flex; justify-content: space-between; align-items: center; gap: .5rem;
           padding: .5rem 0; border-top: 1px solid var(--border); }
 .person:first-of-type { border-top: 0; }
-.name { font-weight: 600; font-size: 1.1rem; }
+.name { font-size: 1.1rem; }
 .assignee { display: flex; justify-content: space-between; align-items: center; gap: .75rem;
             padding: .15rem 0; }
-.muted { color: var(--muted); font-size: .9em; }
-/* Same box as a button, so status and button line up next to each other. */
-.badge { display: inline-block; padding: .2rem .6rem; border-radius: 6px; font: inherit; font-size: .9em;
-         border: 1px solid transparent; white-space: nowrap; text-align: center;
+
+/* Same box as a button, so status and button line up next to each other. Tags are flat,
+   buttons have a shadow, so it's clear which one can be clicked. */
+.badge { display: inline-block; padding: .2rem .6rem; font: inherit; font-size: .9em;
+         border: 1px solid var(--neutral-line); white-space: nowrap; text-align: center;
          color: var(--neutral); background: var(--neutral-soft); }
-.s-done { color: var(--ok); background: var(--ok-soft); }
-.s-pending { color: var(--warn); background: var(--warn-soft); }
-.s-missed { color: var(--bad); background: var(--bad-soft); }
-.s-excused, .s-covered { color: var(--neutral); background: var(--neutral-soft); }
+.s-done { color: var(--ok); background: var(--ok-soft); border-color: var(--ok-line); }
+.s-pending { color: var(--warn); background: var(--warn-soft); border-color: var(--warn-line); }
+.s-missed { color: var(--bad); background: var(--bad-soft); border-color: var(--bad-line); }
+.s-excused, .s-covered { color: var(--neutral); background: var(--neutral-soft);
+                         border-color: var(--neutral-line); }
 /* Equal width for the status tags and the "Erledigt" button in a list of people. */
 .person .badge, .person button, .assignee .badge { min-width: 7.5em; }
-.penalty { color: var(--bad); font-weight: 600; }
-button, .button { font: inherit; font-size: .9em; padding: .2rem .6rem; border-radius: 6px; cursor: pointer;
+
+button, .button { font: inherit; font-size: .9em; font-weight: 500; padding: .2rem .6rem;
+         cursor: pointer; box-shadow: var(--shadow);
          border: 1px solid var(--accent-line); background: var(--accent-soft); color: var(--accent-strong); }
-button:hover { filter: brightness(.95); }
-button.secondary { background: transparent; color: var(--accent); }
-button.danger { background: var(--bad-soft); color: var(--bad); border-color: var(--bad); }
-button.link { background: none; border: 0; padding: 0; color: var(--text); }
-input, select { font: inherit; padding: .35rem .5rem; border: 1px solid var(--border);
-         border-radius: 6px; background: var(--bg); color: var(--text); max-width: 100%; }
+button:hover { filter: brightness(.94); }
+button.secondary { background: var(--card); color: var(--accent); }
+button.danger { background: var(--bad-soft); color: var(--bad); border-color: var(--bad-line); }
+button.link { background: none; border: 0; padding: .3rem .6rem; box-shadow: none; color: var(--accent-strong); }
+
+input, select { font: inherit; padding: .35rem .5rem; border: 1px solid var(--accent-line);
+         background: var(--card); color: var(--text); max-width: 100%; }
 form.inline { display: inline; margin: 0; }
 form.row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: end; }
 form.row label { display: flex; flex-direction: column; font-size: .85rem; color: var(--muted); }
-.table-wrap { overflow-x: auto; }
-table { border-collapse: collapse; width: 100%; background: var(--card); }
-th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
-th { font-size: .85rem; color: var(--muted); font-weight: 600; }
-.flash { padding: .6rem 1rem; border-radius: 8px; margin-bottom: .5rem; background: var(--card);
-         border-left: 4px solid var(--ok); }
-.flash.error { border-left-color: var(--bad); }
+
+.table-wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--border);
+              box-shadow: var(--shadow); }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: .45rem .7rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+tr:last-child > td { border-bottom: 0; }
+th { font-size: .85rem; color: var(--muted); font-weight: 600; background: var(--card-alt); }
+
+.flash { padding: .6rem 1rem; margin-bottom: .5rem;
+         color: var(--ok); background: var(--ok-soft); border: 1px solid var(--ok-line); }
+.flash.error { color: var(--bad); background: var(--bad-soft); border-color: var(--bad-line); }
 details summary { cursor: pointer; }

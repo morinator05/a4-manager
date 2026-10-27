@@ -51,14 +51,19 @@ def room_key(room: str) -> tuple:
     return tuple(int(p) if p.isdigit() else p for p in re.split(r"(\d+)", room))
 
 
-def accrue(balances: dict[int, Balance], eligible: Iterable[int]) -> None:
-    """Spread one job's worth of expected work over everybody available for it."""
+def accrue(balances: dict[int, Balance], eligible: Iterable[int | None]) -> None:
+    """Spread one job's worth of expected work over everybody available for it.
+
+    `None` is someone who has moved out since: they still count for the size of the share,
+    but their share is dropped instead of being passed on to the others.
+    """
     eligible = list(eligible)
     if not eligible:
         return
     share = Fraction(1, len(eligible))
     for uid in eligible:
-        balances.setdefault(uid, Balance()).expected += share
+        if uid is not None:
+            balances.setdefault(uid, Balance()).expected += share
 
 
 def pick(
