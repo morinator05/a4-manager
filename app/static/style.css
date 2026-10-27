@@ -82,7 +82,7 @@ nav .nav-user { color: var(--muted); font-size: .9em; margin-left: auto; padding
 /* Equal width for the status tags and the "Erledigt" button in a list of people. */
 .person .badge, .person button, .assignee .badge { min-width: 7.5em; }
 
-button, .button { font: inherit; font-size: .9em; font-weight: 500; padding: .2rem .6rem;
+button { font: inherit; font-size: .9em; font-weight: 500; padding: .2rem .6rem;
          cursor: pointer; box-shadow: var(--shadow);
          border: 1px solid var(--accent-line); background: var(--accent-soft); color: var(--accent-strong); }
 button:hover { filter: brightness(.94); }

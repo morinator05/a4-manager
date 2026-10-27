@@ -1,3 +1,5 @@
+"""Model helpers."""
+
 from app.models import User
 
 

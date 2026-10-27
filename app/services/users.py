@@ -1,3 +1,5 @@
+"""Residents: creating, pausing, moving out, and away periods."""
+
 from datetime import date
 
 from sqlalchemy import select
@@ -9,10 +11,11 @@ from app.services.auth import MIN_PASSWORD_LENGTH, PASSWORD_TOO_SHORT, hash_pass
 
 
 class UserError(Exception):
-    pass
+    """Invalid input; the message is German and shown to the user as is."""
 
 
 async def list_users(session: AsyncSession) -> list[User]:
+    """All users, sorted by room."""
     users = await session.scalars(select(User))
     return sorted(users, key=lambda u: scheduling.room_key(u.room_number))
 
@@ -26,6 +29,11 @@ async def create(
     password: str,
     is_admin: bool = False,
 ) -> User:
+    """Add a resident. Their duty balance starts at zero.
+
+    Raises:
+        UserError: if a field is empty, the password is too short or the username is taken.
+    """
     username = username.strip().lower()
     if not (name.strip() and room_number.strip() and username and password):
         raise UserError("Alle Felder müssen ausgefüllt sein")
@@ -47,6 +55,7 @@ async def create(
 
 
 async def set_active(session: AsyncSession, user: User, active: bool, today: date) -> None:
+    """Pause or resume a resident. A paused resident's open duties go to someone else."""
     user.active = active
     await session.flush()
     if active:
@@ -57,7 +66,10 @@ async def set_active(session: AsyncSession, user: User, active: bool, today: dat
 
 async def delete(session: AsyncSession, user: User, today: date) -> None:
     """Moving out. The person's history stays anonymised; whoever moves in next is a new
-    user and starts from zero (no debt, no strikes)."""
+    user and starts from zero (no debt, no strikes).
+
+    Their open duties go to someone else.
+    """
     # Open penalty weeks go with the person, so those weeks get a regular Mülldienst again.
     open_penalties = await session.scalars(
         select(Slot)
@@ -79,6 +91,11 @@ async def delete(session: AsyncSession, user: User, today: date) -> None:
 
 
 async def add_away(session: AsyncSession, user: User, start: date, end: date, today: date) -> None:
+    """Mark a resident away from `start` to `end`; open duties in that time are reassigned.
+
+    Raises:
+        UserError: if the period is reversed or already over.
+    """
     if end < start:
         raise UserError("Das Ende muss nach dem Anfang liegen")
     if end < today:
@@ -90,5 +107,6 @@ async def add_away(session: AsyncSession, user: User, start: date, end: date, to
 
 
 async def remove_away(session: AsyncSession, away: AwayPeriod) -> None:
+    """Delete an away period. Duties already reassigned stay with their new people."""
     await session.delete(away)
     await session.flush()

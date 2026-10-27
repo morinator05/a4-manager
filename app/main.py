@@ -1,3 +1,5 @@
+"""The FastAPI app: middleware, static files, routes and the daily background job."""
+
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -19,6 +21,7 @@ logging.basicConfig(level=logging.INFO)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Runs the daily job once on startup and then on a schedule while the app is up."""
     scheduler = None
     if settings.run_scheduler:
         scheduler = AsyncIOScheduler(timezone=settings.tz)
@@ -39,7 +42,7 @@ app.add_middleware(
     secret_key=settings.secret_key,
     session_cookie="a4_session",
     same_site="lax",
-    max_age=60 * 60 * 24 * 90,
+    max_age=60 * 60 * 24 * 90,  # stay logged in for 90 days
 )
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 app.include_router(router)
@@ -47,4 +50,5 @@ app.include_router(router)
 
 @app.exception_handler(LoginRequired)
 async def login_required(request: Request, exc: LoginRequired):
+    """Send people who aren't logged in to the login page, and back here afterwards."""
     return RedirectResponse(f"/login?next={request.url.path}", status_code=303)

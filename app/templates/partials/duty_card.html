@@ -1,3 +1,5 @@
+{# One duty card on the dashboard. Expects: slot (or None), duty, deadline, can_mark(assignment).
+   Also returned alone by the "Erledigt" button, which swaps the card via htmx. #}
 <section class="card" id="card-{{ duty.value }}">
   <h2>
     {{ duty.label }}

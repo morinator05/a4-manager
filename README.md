@@ -1,49 +1,50 @@
 # A4 Manager
 
-Duty manager for dorm floor A4: Küchendienst (2 people on it per day, one of them cleans), Mülldienst (1 person per week), strikes.
+Web app for the duties on dorm floor A4: Küchendienst, Mülldienst and strikes.
 
-## How duties are assigned
+## How it works
 
-Each duty period ("slot": a day for kitchen, a Monday–Sunday week for trash) is one job.
-`n` people are put on it (kitchen 2, trash 1), and whoever marks it done first does it.
-Every resident who is **available** for the slot (active and not away) accrues an equal share
-`1 / available` of *expected* work. A resident's **debt** is `expected − duties actually done`.
-The `n` residents with the highest debt are picked (tie-break: longest since their last duty, then room).
+**Duties**
+- Küchendienst: every day, 2 people are put on it, one of them cleans.
+- Mülldienst: every Monday to Sunday week, 1 person.
+- Whoever did it marks it done ("Erledigt"). The other person on the slot is then "nicht nötig".
+- Deadline: 12:00 the day after the duty ended. After that it counts as missed.
 
-- Away time is fair automatically: you accrue nothing while away, so you don't owe extra afterwards.
-- New residents start at debt 0, with no backlog.
-- A missed duty gives no credit, so you come up again soon. It also gives every assignee a strike.
-- The partner who didn't clean ("nicht nötig") gets no credit and no strike, so they come up again sooner.
-- The number of residents is not fixed. Any number works.
+**Who is picked**
 
-The logic is in `app/services/scheduling.py` (pure functions, see `tests/test_scheduling.py`).
+Every slot is one job. Everybody who is available for it (active and not away) owes an equal
+share of it. A resident's debt is their shares minus the jobs they actually did. The people
+with the highest debt are picked next.
+- Being away is fair: you owe nothing for that time.
+- New residents start at debt 0.
+- A missed duty gives no credit, so you come up again soon.
+- Ties go to whoever had their last duty longest ago.
 
-## Rules
+**Strikes**
+- A missed duty gives every assigned person a strike.
+- The Flursprecher can give strikes by hand and take them back.
+- 3 active strikes give a penalty Mülldienst week (the next free one). It replaces the regular
+  Mülldienst of that week and doesn't count for fairness. The 3 strikes are then paid off.
 
-- Duties must be marked done by **12:00 the day after** the slot ends (`DEADLINE_HOUR`, `DEADLINE_DAYS_AFTER`).
-  After that, the assignment counts as *missed* and each assignee gets an automatic strike.
-- Each resident marks their own duty. Once one of the two has marked it, the other can't anymore.
-  The Flursprecher can mark anyone's.
-- **Verlauf** (history) shows who claimed which duty and when. If someone claimed it but didn't
-  actually clean, the Flursprecher clicks **Beanstanden**: the entry becomes missed, the claimer
-  loses the credit and gets a strike.
-- The Flursprecher (admin) can mark any duty done or excuse it. Both remove the automatic strike.
-- **3 active strikes** (`STRIKE_THRESHOLD`) add a penalty Mülldienst in the next free week. That week has no regular
-  Mülldienst, and the penalty doesn't count toward fairness. The 3 strikes are then marked "abgearbeitet".
-- If someone marks themselves away during a duty that is still open, they are replaced automatically.
-  The same happens when they are deactivated or deleted.
-- Deactivate residents to pause them. Delete them when they move out. Their past duties stay in the history
-  (as "ehemalig") and still count for the past, so nobody else inherits their share. Open penalty weeks are dropped.
-- Someone new moves into a room: add them as a new resident (don't rename the old account). They start at
-  debt 0 with no strikes, independent of what the previous resident did.
+**Flursprecher (admin)**
+- Adds, pauses and deletes residents.
+- Can mark any duty done or excuse it (no strike, no credit).
+- "Beanstanden" in the history: marked done but not done. The claimer loses the credit and gets a strike.
 
-A daily job runs at 00:05 and 12:05 (Europe/Berlin). It flags missed duties, then picks today's kitchen people
-and this week's trash person. The Flursprecher page can also trigger it.
+**Residents**
+- Away, paused or deleted residents are replaced on their open duties automatically.
+- Moving out: delete the resident. Their history stays (as "ehemalig") and nobody inherits their share.
+- Moving in: add a new resident, don't rename the old account. They start from zero.
+
+**Daily job**: runs at 00:05 and 12:05. It marks missed duties and picks today's and this
+week's people. The Flursprecher page can run it by hand.
+
+All numbers (people per slot, deadline, strike limit) are settings in `.env`, see `.env.example`.
 
 ## Setup
 
 ```bash
-cp .env.example .env               # set SECRET_KEY (openssl rand -hex 32), the app won't start without it
+cp .env.example .env                    # set SECRET_KEY: openssl rand -hex 32
 docker compose up -d db
 uv sync
 uv run alembic upgrade head
@@ -51,20 +52,18 @@ uv run python scripts/create_admin.py   # first Flursprecher
 uv run fastapi dev app/main.py          # http://localhost:8000
 ```
 
-The Flursprecher adds all other residents on `/admin`.
-
-Run everything in Docker: `docker compose --profile app up --build`.
+Everything in Docker: `docker compose --profile app up --build`.
+Test residents: `uv run python scripts/seed.py`.
 
 ## Tests
 
 ```bash
-uv run pytest   # needs `docker compose up -d db`; creates the a4_test database if missing
+uv run pytest   # needs the database from `docker compose up -d db`
 ```
 
-## Layout
+## Code
 
-- `app/services/`: business logic (scheduling, duties, strikes, users, daily job)
-- `app/web.py`: routes (htmx + Jinja templates in `app/templates/`)
-- `app/models.py`: SQLAlchemy models; migrations in `migrations/`
-
-The routes are thin wrappers around the services, so a JSON API (e.g. for a bot) can be added later.
+- `app/services/scheduling.py`: the fairness logic, without database (start reading here)
+- `app/services/`: the other rules (duties, strikes, users, login, daily job)
+- `app/web.py`: pages and form actions; templates in `app/templates/`
+- `app/models.py`: database tables; migrations in `migrations/`

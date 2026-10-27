@@ -1,4 +1,8 @@
-"""Database side of the duty schedule: materializing slots, marking done, missed duties."""
+"""Database side of the duty schedule: creating slots, marking done, missed duties.
+
+Slots are only created ("materialized") for the current day and week. Future ones are just
+simulated for the preview, so they always reflect the latest balances and away periods.
+"""
 
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
@@ -15,7 +19,7 @@ from app.services.scheduling import Balance, Candidate
 
 
 class DutyError(Exception):
-    pass
+    """An action on a duty isn't allowed; the message is German and shown as is."""
 
 
 def people_per_slot(duty: Duty) -> int:
@@ -26,6 +30,7 @@ def people_per_slot(duty: Duty) -> int:
 
 
 def slot_bounds(duty: Duty, day: date) -> tuple[date, date]:
+    """First and last day of the slot containing `day`: the day itself, or its Mon-Sun week."""
     if duty is Duty.kitchen:
         return day, day
     start = scheduling.week_start(day)
@@ -33,11 +38,13 @@ def slot_bounds(duty: Duty, day: date) -> tuple[date, date]:
 
 
 def deadline(slot: Slot) -> datetime:
+    """Until when the slot can be marked done; after that it counts as missed."""
     day = slot.end_date + timedelta(days=settings.deadline_days_after)
     return datetime.combine(day, time(settings.deadline_hour), settings.tz)
 
 
 async def load_candidates(session: AsyncSession) -> list[Candidate]:
+    """All active users with their away periods, as input for `scheduling`."""
     users = await session.scalars(
         select(User).where(User.active.is_(True)).options(selectinload(User.away_periods))
     )
@@ -67,6 +74,10 @@ def slot_credit(slot: Slot, a: Assignment) -> Fraction:
 
 
 async def load_balances(session: AsyncSession, duty: Duty) -> dict[int, Balance]:
+    """Every user's fairness balance for `duty`, computed from all slots so far.
+
+    Balances are never stored; they are always recomputed from the history.
+    """
     balances: dict[int, Balance] = {}
 
     slots = (
@@ -91,6 +102,7 @@ async def load_balances(session: AsyncSession, duty: Duty) -> dict[int, Balance]
 
 
 async def get_slot(session: AsyncSession, duty: Duty, day: date) -> Slot | None:
+    """The slot containing `day`, with its people loaded, or None if not created yet."""
     start, _ = slot_bounds(duty, day)
     return await session.scalar(
         select(Slot)
@@ -132,6 +144,7 @@ async def materialize(session: AsyncSession, duty: Duty, day: date) -> Slot:
 
 
 async def _top_up(session: AsyncSession, slot: Slot, missing: int) -> None:
+    """Add `missing` people to an existing slot, including residents added since."""
     candidates = await load_candidates(session)
     await session.refresh(slot, ["eligible"])
     known = {e.user_id for e in slot.eligible}
@@ -223,6 +236,11 @@ async def process_overdue(session: AsyncSession, now: datetime) -> list[Assignme
 
 
 async def get_assignment(session: AsyncSession, assignment_id: int) -> Assignment:
+    """The assignment with its slot and the slot's other people loaded.
+
+    Raises:
+        DutyError: if there is no such assignment.
+    """
     a = await session.scalar(
         select(Assignment)
         .where(Assignment.id == assignment_id)
@@ -238,6 +256,11 @@ async def get_assignment(session: AsyncSession, assignment_id: int) -> Assignmen
 
 
 def can_mark_done(a: Assignment, actor: User, now: datetime) -> bool:
+    """Whether `actor` may mark `a` as done now.
+
+    Residents: only their own open duty, from its first day until the deadline.
+    Flursprecher: any duty at any time, as long as nobody on the slot has done it.
+    """
     # Only one person does a slot: once somebody claimed it, it's closed.
     if any(x.status is Status.done for x in a.slot.assignments):
         return False
@@ -247,18 +270,25 @@ def can_mark_done(a: Assignment, actor: User, now: datetime) -> bool:
         return False
     if not (a.slot.start_date <= now.date() and now < deadline(a.slot)):
         return False
-    # Residents can only mark their own duty; the Flursprecher can mark anyone's.
     return a.user_id == actor.id
 
 
 async def _revoke_strikes(session: AsyncSession, a: Assignment, now: datetime) -> None:
+    """Take back the strikes given for this duty (it was done or excused after all)."""
     for s in await strikes.for_assignment(session, a.id):
         if s.is_active:
             s.revoked_at = now
 
 
 async def mark_done(session: AsyncSession, a: Assignment, actor: User, now: datetime) -> None:
-    """`a`'s person claims the slot; everybody else on it is off the hook."""
+    """`a`'s person claims the slot; everybody else on it is off the hook.
+
+    Also revokes strikes already given for the slot (the Flursprecher may mark it done
+    after the deadline).
+
+    Raises:
+        DutyError: if `actor` may not mark it (see `can_mark_done`).
+    """
     if not can_mark_done(a, actor, now):
         raise DutyError("Du kannst diesen Dienst nicht abhaken")
     await _revoke_strikes(session, a, now)
@@ -274,7 +304,11 @@ async def mark_done(session: AsyncSession, a: Assignment, actor: User, now: date
 
 
 async def excuse(session: AsyncSession, a: Assignment, actor: User, now: datetime) -> None:
-    """Admin only: nobody is blamed, but the person gets no credit either."""
+    """Admin only: nobody is blamed, but the person gets no credit either.
+
+    Raises:
+        DutyError: if `actor` isn't the Flursprecher.
+    """
     if not actor.is_admin:
         raise DutyError("Nur der Flursprecher kann Dienste entschuldigen")
     await _revoke_strikes(session, a, now)
@@ -285,7 +319,13 @@ async def excuse(session: AsyncSession, a: Assignment, actor: User, now: datetim
 
 
 async def dispute(session: AsyncSession, a: Assignment, actor: User, now: datetime) -> None:
-    """Admin only: it was marked done but not actually done. The claimer gets a strike."""
+    """Admin only: it was marked done but not actually done. The claimer gets a strike.
+
+    The claimer loses the credit; the partner stays "covered" and gets nothing.
+
+    Raises:
+        DutyError: if `actor` isn't the Flursprecher or the duty isn't done.
+    """
     if not actor.is_admin:
         raise DutyError("Nur der Flursprecher kann Dienste beanstanden")
     if a.status is not Status.done:
@@ -309,6 +349,8 @@ async def dispute(session: AsyncSession, a: Assignment, actor: User, now: dateti
 
 @dataclass
 class PreviewEntry:
+    """One row of the dashboard preview."""
+
     start: date
     end: date
     user_ids: list[int]
@@ -316,7 +358,11 @@ class PreviewEntry:
 
 
 async def preview(session: AsyncSession, duty: Duty, start: date, end: date) -> list[PreviewEntry]:
-    """Expected schedule for slots starting in [start, end] that don't exist yet."""
+    """Expected schedule for the slots starting between `start` and `end`.
+
+    Slots that already exist (e.g. penalty weeks) are shown as they are; the others are
+    simulated with `scheduling.plan`.
+    """
     n = people_per_slot(duty)
     step = timedelta(days=1 if duty is Duty.kitchen else 7)
     # Trash weeks start on Monday: skip the week that is already running on `start`.

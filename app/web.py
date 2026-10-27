@@ -1,3 +1,10 @@
+"""All pages and form actions (server-rendered Jinja templates, htmx for small updates).
+
+Routes only parse input, call a service and render or redirect; the rules live in
+`app/services/`. Every form POST answers with a redirect (303), so reloading the page
+doesn't submit the form again.
+"""
+
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Annotated
@@ -59,11 +66,13 @@ templates.env.filters["weekday"] = lambda d: ["Mo", "Di", "Mi", "Do", "Fr", "Sa"
 
 
 def flash(request: Request, message: str, kind: str = "ok") -> None:
+    """Queue a message for the next rendered page. `kind` is "ok" or "error"."""
     # Assign a new list: the session only notices assignments, not in-place changes.
     request.session["flash"] = [*request.session.get("flash", []), [kind, message]]
 
 
 def render(request: Request, name: str, user: User | None, **ctx) -> HTMLResponse:
+    """Render a full page; adds the user, pending messages and today's date."""
     messages = request.session.pop("flash", [])
     return templates.TemplateResponse(
         request, name, {"user": user, "messages": messages, "today": settings.today(), **ctx}
@@ -71,20 +80,28 @@ def render(request: Request, name: str, user: User | None, **ctx) -> HTMLRespons
 
 
 def redirect(url: str) -> RedirectResponse:
+    """Redirect after a form POST; 303 makes the browser follow it with a GET."""
     return RedirectResponse(url, status_code=303)
 
 
 def safe_next(url: str | None) -> str:
+    """`url` if it's a path on this site, else "/". Stops redirects to other sites."""
     if url and url.startswith("/") and not url.startswith("//"):
         return url
     return "/"
 
 
 async def users_by_id(session: AsyncSession) -> dict[int, User]:
+    """All users by id, to show the names in the preview."""
     return {u.id: u for u in await session.scalars(select(User))}
 
 
 def duty_card_ctx(slot: Slot | None, duty: Duty, user: User | None) -> dict:
+    """Template variables for `partials/duty_card.html`.
+
+    `can_mark` is a function, so the template can ask for each person on the card
+    whether the logged-in user may mark it done.
+    """
     now = settings.now()
     return {
         "slot": slot,
@@ -99,6 +116,7 @@ def duty_card_ctx(slot: Slot | None, duty: Duty, user: User | None) -> dict:
 
 @router.get("/login")
 async def login_page(request: Request, user: OptionalUser, next: str = "/"):
+    """Login form; `next` is where to go after logging in."""
     if user:
         return redirect(safe_next(next))
     return render(request, "login.html", None, next=next)
@@ -112,6 +130,7 @@ async def login(
     password: Annotated[str, Form()],
     next: Annotated[str, Form()] = "/",
 ):
+    """Log in. Too many failed attempts block the username from that IP for a while."""
     client_ip = request.client.host if request.client else "unknown"
     throttle_key = f"{username.strip().lower()}@{client_ip}"
     if login_throttle.is_blocked(throttle_key):
@@ -130,6 +149,7 @@ async def login(
 
 @router.post("/logout")
 async def logout(request: Request):
+    """Log out."""
     request.session.clear()
     return redirect("/")
 
@@ -139,6 +159,7 @@ async def logout(request: Request):
 
 @router.get("/")
 async def dashboard(request: Request, session: Session, user: OptionalUser):
+    """Today's duties and the preview; visible without login."""
     today = settings.today()
     kitchen = await duties.get_slot(session, Duty.kitchen, today)
     trash = await duties.get_slot(session, Duty.trash, today)
@@ -163,6 +184,7 @@ async def dashboard(request: Request, session: Session, user: OptionalUser):
 
 @router.post("/assignments/{assignment_id}/done")
 async def mark_done(request: Request, session: Session, user: CurrentUser, assignment_id: int):
+    """Mark a duty as done, from the dashboard card or the Flursprecher page."""
     # The dashboard card posts with `card=1` and swaps only itself with the response.
     is_card_request = bool(request.headers.get("HX-Request") and request.query_params.get("card"))
     try:
@@ -191,6 +213,7 @@ async def mark_done(request: Request, session: Session, user: CurrentUser, assig
 
 @router.get("/me")
 async def me(request: Request, session: Session, user: CurrentUser):
+    """Own page: away periods, password, strikes and recent duties."""
     aways = await session.scalars(
         select(AwayPeriod)
         .where(AwayPeriod.user_id == user.id, AwayPeriod.end_date >= settings.today())
@@ -225,6 +248,7 @@ async def add_away(
     start_date: Annotated[date, Form()],
     end_date: Annotated[date, Form()],
 ):
+    """Add an away period for yourself."""
     try:
         await users.add_away(session, user, start_date, end_date, settings.today())
         await session.commit()
@@ -236,6 +260,7 @@ async def add_away(
 
 @router.post("/me/away/{away_id}/delete")
 async def delete_away(request: Request, session: Session, user: CurrentUser, away_id: int):
+    """Delete an away period (your own, or anyone's as Flursprecher)."""
     away = await session.get(AwayPeriod, away_id)
     if away is None or (away.user_id != user.id and not user.is_admin):
         raise HTTPException(404)
@@ -253,6 +278,7 @@ async def change_password(
     old_password: Annotated[str, Form()],
     new_password: Annotated[str, Form()],
 ):
+    """Change your own password."""
     if not auth.verify_password(old_password, user.password_hash):
         flash(request, "Altes Passwort falsch", "error")
     elif len(new_password) < auth.MIN_PASSWORD_LENGTH:
@@ -271,6 +297,7 @@ HISTORY_DAYS = 28
 
 @router.get("/history")
 async def history(request: Request, session: Session, user: CurrentUser, until: date | None = None):
+    """Who claimed which duty, `HISTORY_DAYS` days up to `until`."""
     today = settings.today()
     until = min(until or today, today)
     since = until - timedelta(days=HISTORY_DAYS - 1)
@@ -300,6 +327,7 @@ async def history(request: Request, session: Session, user: CurrentUser, until: 
 
 @router.get("/stats")
 async def stats(request: Request, session: Session, user: OptionalUser):
+    """Per resident: duties done and missed, debt and strikes; visible without login."""
     all_users = await users.list_users(session)
     balances = {d: await duties.load_balances(session, d) for d in Duty}
     rows = (
@@ -309,6 +337,7 @@ async def stats(request: Request, session: Session, user: OptionalUser):
             )
         )
     ).all()
+    # (user id, duty, status) -> number of assignments; penalty weeks count as "penalty".
     counts: dict[tuple, int] = {}
     for uid, duty, is_penalty, status in rows:
         key = (uid, duty, "penalty" if is_penalty else status)
@@ -330,6 +359,7 @@ async def stats(request: Request, session: Session, user: OptionalUser):
 
 @router.get("/admin")
 async def admin(request: Request, session: Session, user: AdminUser):
+    """Flursprecher page: residents, strikes and recent duties."""
     all_users = await users.list_users(session)
     since = settings.today() - timedelta(days=14)
     slots = await session.scalars(
@@ -365,6 +395,7 @@ async def admin_create_user(
     password: Annotated[str, Form()],
     is_admin: Annotated[bool, Form()] = False,
 ):
+    """Add a resident and put them on today's duties if people are missing."""
     try:
         new = await users.create(
             session,
@@ -383,6 +414,7 @@ async def admin_create_user(
 
 
 async def _get_user(session: AsyncSession, user_id: int) -> User:
+    """The user, or a 404 page."""
     target = await session.get(User, user_id)
     if target is None:
         raise HTTPException(404)
@@ -400,6 +432,7 @@ async def admin_edit_user(
     password: Annotated[str, Form()] = "",
     is_admin: Annotated[bool, Form()] = False,
 ):
+    """Change a resident's name, room, password or admin role (not your own role)."""
     target = await _get_user(session, user_id)
     if password and len(password) < auth.MIN_PASSWORD_LENGTH:
         flash(request, auth.PASSWORD_TOO_SHORT, "error")
@@ -417,6 +450,7 @@ async def admin_edit_user(
 
 @router.post("/admin/users/{user_id}/active")
 async def admin_toggle_active(request: Request, session: Session, user: AdminUser, user_id: int):
+    """Pause or resume a resident."""
     target = await _get_user(session, user_id)
     await users.set_active(session, target, not target.active, settings.today())
     await session.commit()
@@ -426,6 +460,7 @@ async def admin_toggle_active(request: Request, session: Session, user: AdminUse
 
 @router.post("/admin/users/{user_id}/delete")
 async def admin_delete_user(request: Request, session: Session, user: AdminUser, user_id: int):
+    """Delete a resident who moved out (not yourself)."""
     target = await _get_user(session, user_id)
     if target.id == user.id:
         flash(request, "Du kannst dich nicht selbst löschen", "error")
@@ -445,6 +480,7 @@ async def admin_issue_strike(
     user_id: Annotated[int, Form()],
     reason: Annotated[str, Form()],
 ):
+    """Give a strike by hand."""
     target = await _get_user(session, user_id)
     await strikes.issue(
         session,
@@ -460,6 +496,7 @@ async def admin_issue_strike(
 
 @router.post("/admin/strikes/{strike_id}/revoke")
 async def admin_revoke_strike(request: Request, session: Session, user: AdminUser, strike_id: int):
+    """Take a strike back."""
     strike = await session.get(Strike, strike_id)
     if strike is None:
         raise HTTPException(404)
@@ -471,6 +508,7 @@ async def admin_revoke_strike(request: Request, session: Session, user: AdminUse
 
 @router.post("/admin/assignments/{assignment_id}/excuse")
 async def admin_excuse(request: Request, session: Session, user: AdminUser, assignment_id: int):
+    """Excuse a duty: no strike, no credit."""
     try:
         a = await duties.get_assignment(session, assignment_id)
         await duties.excuse(session, a, user, settings.now())
@@ -483,6 +521,7 @@ async def admin_excuse(request: Request, session: Session, user: AdminUser, assi
 
 @router.post("/admin/assignments/{assignment_id}/dispute")
 async def admin_dispute(request: Request, session: Session, user: AdminUser, assignment_id: int):
+    """Marked done but not actually done: the claimer gets a strike."""
     try:
         a = await duties.get_assignment(session, assignment_id)
         await duties.dispute(session, a, user, settings.now())
@@ -496,6 +535,7 @@ async def admin_dispute(request: Request, session: Session, user: AdminUser, ass
 
 @router.post("/admin/tick")
 async def admin_tick(request: Request, session: Session, user: AdminUser):
+    """Run the daily job now."""
     await jobs.daily_tick(session, settings.now())
     flash(request, "Tagesjob ausgeführt")
     return redirect("/admin")

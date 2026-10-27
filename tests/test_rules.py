@@ -1,3 +1,5 @@
+"""Rules against a real database: assigning, deadlines, strikes, moving out, web pages."""
+
 import random
 from datetime import date, datetime, time, timedelta
 from fractions import Fraction
@@ -19,10 +21,12 @@ MONDAY = date(2026, 11, 2)
 
 
 def at(day: date, hour: int = 9) -> datetime:
+    """`day` at `hour` in the app's time zone."""
     return datetime.combine(day, time(hour), settings.tz)
 
 
 async def make_users(session, n=15, admin=True):
+    """`n` residents p1..pn (password "secret123"); p1 is the Flursprecher if `admin`."""
     created = []
     for i in range(1, n + 1):
         created.append(
@@ -107,6 +111,7 @@ async def test_penalty_does_not_count_as_regular_trash(session):
 
 
 async def kitchen_pair(session, people, day=MONDAY):
+    """Run the daily job for `day`; returns the kitchen slot, its two assignments and people."""
     await jobs.daily_tick(session, at(day))
     kitchen = await duties.get_slot(session, Duty.kitchen, day)
     by_id = {p.id: p for p in people}
@@ -254,6 +259,7 @@ async def test_month_of_ticks_is_fair(session):
 
 @pytest.fixture
 async def client(session_factory):
+    """HTTP client that calls the app directly (no server), keeping the login cookie."""
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as c:
@@ -261,6 +267,7 @@ async def client(session_factory):
 
 
 async def login(client, username):
+    """Log in as `username` with the test password."""
     r = await client.post("/login", data={"username": username, "password": "secret123"})
     assert r.status_code == 303
 

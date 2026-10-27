@@ -1,3 +1,5 @@
+"""The pure fairness logic, simulated over many days without a database."""
+
 import random
 from collections import Counter
 from datetime import date, timedelta
@@ -10,10 +12,12 @@ START = date(2026, 1, 5)  # a Monday
 
 
 def days(n: int, start: date = START) -> list[tuple[date, date]]:
+    """`n` one-day slots from `start`."""
     return [(start + timedelta(days=i),) * 2 for i in range(n)]
 
 
 def people(n: int) -> list[Candidate]:
+    """`n` candidates with ids 1..n, nobody away."""
     return [Candidate(id=i, room=f"A4.{i}") for i in range(1, n + 1)]
 
 

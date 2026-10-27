@@ -12,6 +12,11 @@ WINDOW_SECONDS = 15 * 60
 
 
 class LoginThrottle:
+    """Counts failed logins per key (username and IP) in a sliding time window.
+
+    `clock` is injectable so tests don't have to wait.
+    """
+
     def __init__(
         self,
         max_failures: int = MAX_FAILURES,
@@ -28,12 +33,15 @@ class LoginThrottle:
         return len(self._recent_failures(key)) >= self._max_failures
 
     def record_failure(self, key: str) -> None:
+        """Remember a failed attempt now."""
         self._failures.setdefault(key, []).append(self._clock())
 
     def reset(self, key: str) -> None:
+        """Forget all failures, after a successful login."""
         self._failures.pop(key, None)
 
     def _recent_failures(self, key: str) -> list[float]:
+        """Failures inside the window; older ones are dropped so memory doesn't grow."""
         cutoff = self._clock() - self._window_seconds
         recent = [t for t in self._failures.get(key, []) if t > cutoff]
         if recent:

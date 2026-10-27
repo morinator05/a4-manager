@@ -1,3 +1,5 @@
+"""Test setup: a separate `a4_test` database, recreated empty for every test."""
+
 import os
 
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://a4:a4@localhost:5432/a4_test")
@@ -16,6 +18,7 @@ from app.models import Base  # noqa: E402
 
 
 async def ensure_test_database() -> None:
+    """Create the test database if it doesn't exist yet."""
     url = make_url(settings.database_url)
     params = dict(user=url.username, password=url.password, host=url.host, port=url.port)
     try:
@@ -28,6 +31,7 @@ async def ensure_test_database() -> None:
 
 @pytest.fixture
 async def session_factory(monkeypatch):
+    """Fresh tables; the app's own sessions use the test database too. Skips without DB."""
     engine = create_async_engine(settings.database_url, poolclass=NullPool)
     try:
         await ensure_test_database()
@@ -44,5 +48,6 @@ async def session_factory(monkeypatch):
 
 @pytest.fixture
 async def session(session_factory):
+    """A database session for the test."""
     async with session_factory() as s:
         yield s
