@@ -67,7 +67,7 @@
   <tr><th>Datum</th><th>Bewohner</th><th>Grund</th><th>Von</th><th>Status</th></tr>
   {% for s in strikes %}
     <tr>
-      <td>{{ s.created_at|dt }}</td>
+      <td>{{ s.created_at|date_time }}</td>
       <td>{{ s.user.display_name }}</td>
       <td>{{ s.reason }}</td>
       <td>{{ "automatisch" if s.auto else (s.issued_by.display_name if s.issued_by else "–") }}</td>
@@ -91,7 +91,7 @@
     {% set slot_done = slot.assignments|selectattr("status", "equalto", Status.done)|list %}
     {% for a in slot.assignments %}
       <tr>
-        <td>{{ slot.start_date|weekday }} {{ slot.start_date|d }}{% if slot.end_date != slot.start_date %}–{{ slot.end_date|d }}{% endif %}</td>
+        <td>{{ slot.start_date|weekday }} {{ slot.start_date|short_date }}{% if slot.end_date != slot.start_date %}–{{ slot.end_date|short_date }}{% endif %}</td>
         <td>{{ slot.duty.label }}{% if slot.is_penalty %} <span class="penalty">(Strafe)</span>{% endif %}</td>
         <td>{{ a.user.display_name if a.user else "ehemalig" }}</td>
         <td>{% include "partials/status.html" %}</td>

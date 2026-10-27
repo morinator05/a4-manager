@@ -30,7 +30,7 @@ h2 { font-size: 1.15rem; margin: 1.5rem 0 .5rem; }
 .badge { display: inline-block; padding: .1rem .5rem; border-radius: 99px; font-size: .8rem;
          border: 1px solid currentColor; white-space: nowrap; }
 .s-done { color: var(--ok); } .s-pending { color: var(--warn); }
-.s-missed { color: var(--bad); } .s-excused { color: var(--muted); }
+.s-missed { color: var(--bad); } .s-excused, .s-covered { color: var(--muted); }
 .penalty { color: var(--bad); font-weight: 600; }
 button, .button { font: inherit; padding: .35rem .8rem; border-radius: 6px; cursor: pointer;
          border: 1px solid var(--accent); background: var(--accent); color: #fff; }

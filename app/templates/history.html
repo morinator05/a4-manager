@@ -14,7 +14,7 @@
     {% set claimed = slot.assignments|selectattr("status", "equalto", Status.done)|first %}
     {% set disputed = slot.assignments|selectattr("disputed_at")|first %}
     <tr>
-      <td>{{ slot.start_date|weekday }} {{ slot.start_date|d }}{% if slot.end_date != slot.start_date %}–{{ slot.end_date|d }}{% endif %}</td>
+      <td>{{ slot.start_date|weekday }} {{ slot.start_date|short_date }}{% if slot.end_date != slot.start_date %}–{{ slot.end_date|short_date }}{% endif %}</td>
       <td>{{ slot.duty.label }}{% if slot.is_penalty %} <span class="penalty">(Strafe)</span>{% endif %}</td>
       <td>
         {% for a in slot.assignments %}
@@ -25,9 +25,9 @@
         {% set c = claimed or disputed %}
         {% if c %}
           <strong>{{ c.user.display_name if c.user else "ehemalig" }}</strong>
-          <div class="muted">eingetragen {{ c.completed_at|dt }}
+          <div class="muted">eingetragen {{ c.completed_at|date_time }}
             {% if c.completed_by and c.completed_by_id != c.user_id %}durch {{ c.completed_by.display_name }}{% endif %}</div>
-          {% if c.disputed_at %}<div class="penalty">beanstandet {{ c.disputed_at|dt }}</div>{% endif %}
+          {% if c.disputed_at %}<div class="penalty">beanstandet {{ c.disputed_at|date_time }}</div>{% endif %}
         {% else %}<span class="muted">niemand</span>{% endif %}
       </td>
       {% if user.is_admin %}

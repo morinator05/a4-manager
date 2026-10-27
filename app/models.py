@@ -116,8 +116,12 @@ class SlotEligible(Base):
 
     __tablename__ = "slot_eligible"
 
-    slot_id: Mapped[int] = mapped_column(ForeignKey("slots.id", ondelete="CASCADE"), primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    slot_id: Mapped[int] = mapped_column(
+        ForeignKey("slots.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
 
     slot: Mapped[Slot] = relationship(back_populates="eligible")
 

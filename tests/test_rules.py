@@ -207,7 +207,9 @@ async def test_away_replaces_pending_assignment(session):
     ids = [a.user_id for a in kitchen.assignments]
     assert len(ids) == 2 and leaving_id not in ids
 
-    preview = await duties.preview(session, Duty.kitchen, MONDAY + timedelta(days=1), MONDAY + timedelta(days=3))
+    preview = await duties.preview(
+        session, Duty.kitchen, MONDAY + timedelta(days=1), MONDAY + timedelta(days=3)
+    )
     assert all(leaving_id not in e.user_ids for e in preview)
 
 
@@ -312,3 +314,43 @@ async def test_history_page_and_dispute(session, client):
     r = await client.post(f"/admin/assignments/{first.id}/dispute?next=/history")
     assert r.status_code == 303
     assert "beanstandet" in (await client.get("/history")).text
+
+
+async def test_top_up_skips_slot_that_is_already_done(session):
+    # Only one resident: they get today's kitchen duty alone and do it.
+    [first] = await make_users(session, n=1)
+    await jobs.daily_tick(session, at(MONDAY))
+    kitchen = await duties.get_slot(session, Duty.kitchen, MONDAY)
+    a = await duties.get_assignment(session, kitchen.assignments[0].id)
+    await duties.mark_done(session, a, first, at(MONDAY, 10))
+    await session.commit()
+
+    # A resident added later must not be put on the finished slot (and struck for it).
+    newbie = await users.create(
+        session, name="Neu", room_number="2", username="neu", password="secret123"
+    )
+    await duties.fill_current(session, MONDAY)
+    await session.commit()
+    kitchen = await duties.get_slot(session, Duty.kitchen, MONDAY)
+    assert [x.user_id for x in kitchen.assignments] == [first.id]
+
+    await jobs.daily_tick(session, at(MONDAY + timedelta(days=1), 13))
+    assert await strikes.active_strikes(session, newbie.id) == []
+
+
+async def test_web_errors_do_not_break_the_page(session, client):
+    people = await make_users(session, n=4)
+    _, first, _, p1, _ = await kitchen_pair(session, people, settings.today())
+    outsider = next(p for p in people if p.id != p1.id and not p.is_admin)
+
+    # Clicking someone else's card button reloads the page instead of nesting it in the card.
+    await login(client, outsider.username)
+    r = await client.post(
+        f"/assignments/{first.id}/done?card=1", headers={"HX-Request": "true"}
+    )
+    assert r.status_code == 200 and r.headers["HX-Refresh"] == "true"
+
+    await client.post("/logout")
+    await login(client, "p1")
+    r = await client.post("/admin/assignments/999999/excuse")
+    assert r.status_code == 303 and r.headers["location"] == "/admin"

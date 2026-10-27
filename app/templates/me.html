@@ -38,7 +38,7 @@
 <div class="table-wrap"><table>
   {% for s in strikes %}
     <tr>
-      <td>{{ s.created_at|dt }}</td>
+      <td>{{ s.created_at|date_time }}</td>
       <td>{{ s.reason }}</td>
       <td>{% if s.revoked_at %}<span class="badge s-excused">zurückgenommen</span>
           {% elif s.redeemed_by_assignment_id %}<span class="badge s-excused">abgearbeitet</span>

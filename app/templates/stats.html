@@ -20,7 +20,7 @@
       <td>{{ counts.get((u.id, Duty.trash, Status.done), 0) }}</td>
       <td>{{ "%.2f"|format(tb.debt|float) if tb else "0.00" }}</td>
       <td>{{ counts.get((u.id, Duty.trash, "penalty"), 0) }}</td>
-      <td>{{ active[u.id] }} / {{ threshold }}</td>
+      <td>{{ active[u.id] }} / {{ strike_threshold }}</td>
     </tr>
   {% endfor %}
 </table></div>

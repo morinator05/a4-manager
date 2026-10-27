@@ -4,7 +4,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from app.services.scheduling import Balance, Candidate, accrue, credit, plan, room_key
+from app.services.scheduling import Candidate, accrue, credit, plan, room_key
 
 START = date(2026, 1, 5)  # a Monday
 

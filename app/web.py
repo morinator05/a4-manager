@@ -3,9 +3,10 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
@@ -19,8 +20,11 @@ router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 templates.env.globals["Duty"] = Duty
 templates.env.globals["Status"] = Status
-templates.env.filters["d"] = lambda d: f"{d:%d.%m.}" if d else ""
-templates.env.filters["dt"] = lambda d: f"{d.astimezone(settings.tz):%d.%m.%Y %H:%M}" if d else ""
+templates.env.globals["strike_threshold"] = settings.strike_threshold
+templates.env.filters["short_date"] = lambda d: f"{d:%d.%m.}" if d else ""
+templates.env.filters["date_time"] = (
+    lambda d: f"{d.astimezone(settings.tz):%d.%m.%Y %H:%M}" if d else ""
+)
 templates.env.filters["weekday"] = lambda d: ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"][d.weekday()]
 
 
@@ -45,7 +49,7 @@ def safe_next(url: str | None) -> str:
     return "/"
 
 
-async def user_names(session) -> dict[int, User]:
+async def users_by_id(session: AsyncSession) -> dict[int, User]:
     return {u.id: u for u in await session.scalars(select(User))}
 
 
@@ -104,6 +108,7 @@ async def dashboard(request: Request, session: Session, user: OptionalUser):
         kitchen = await duties.get_slot(session, Duty.kitchen, today)
         trash = await duties.get_slot(session, Duty.trash, today)
 
+    tomorrow = today + timedelta(days=1)
     horizon = today + timedelta(days=settings.preview_days)
     return render(
         request,
@@ -111,22 +116,27 @@ async def dashboard(request: Request, session: Session, user: OptionalUser):
         user,
         kitchen=duty_card_ctx(kitchen, Duty.kitchen, user),
         trash=duty_card_ctx(trash, Duty.trash, user),
-        kitchen_preview=await duties.preview(session, Duty.kitchen, today + timedelta(days=1), horizon),
-        trash_preview=await duties.preview(session, Duty.trash, today + timedelta(days=1), horizon),
-        names=await user_names(session),
+        kitchen_preview=await duties.preview(session, Duty.kitchen, tomorrow, horizon),
+        trash_preview=await duties.preview(session, Duty.trash, tomorrow, horizon),
+        users_by_id=await users_by_id(session),
     )
 
 
 @router.post("/assignments/{assignment_id}/done")
 async def mark_done(request: Request, session: Session, user: CurrentUser, assignment_id: int):
+    # The dashboard card posts with `card=1` and swaps only itself with the response.
+    is_card_request = bool(request.headers.get("HX-Request") and request.query_params.get("card"))
     try:
         a = await duties.get_assignment(session, assignment_id)
         await duties.mark_done(session, a, user, settings.now())
         await session.commit()
     except DutyError as e:
         flash(request, str(e), "error")
-        return redirect(request.headers.get("HX-Current-URL") or "/")
-    if request.headers.get("HX-Request") and request.query_params.get("card"):
+        if is_card_request:
+            # A redirect would put the whole page into the card; reload so the flash shows.
+            return Response(headers={"HX-Refresh": "true"})
+        return redirect(safe_next(request.query_params.get("next")))
+    if is_card_request:
         slot = await duties.get_slot(session, a.slot.duty, a.slot.start_date)
         return templates.TemplateResponse(
             request, "partials/duty_card.html", duty_card_ctx(slot, slot.duty, user)
@@ -271,7 +281,6 @@ async def stats(request: Request, session: Session, user: OptionalUser):
         balances=balances,
         counts=counts,
         active=active,
-        threshold=settings.strike_threshold,
     )
 
 
@@ -332,7 +341,7 @@ async def admin_create_user(
     return redirect("/admin")
 
 
-async def _get_user(session, user_id: int) -> User:
+async def _get_user(session: AsyncSession, user_id: int) -> User:
     target = await session.get(User, user_id)
     if target is None:
         raise HTTPException(404)
@@ -394,7 +403,10 @@ async def admin_issue_strike(
 ):
     target = await _get_user(session, user_id)
     await strikes.issue(
-        session, user_id=target.id, reason=reason.strip() or "–", issued_by_id=user.id,
+        session,
+        user_id=target.id,
+        reason=reason.strip() or "–",
+        issued_by_id=user.id,
         today=settings.today(),
     )
     await session.commit()
@@ -415,10 +427,13 @@ async def admin_revoke_strike(request: Request, session: Session, user: AdminUse
 
 @router.post("/admin/assignments/{assignment_id}/excuse")
 async def admin_excuse(request: Request, session: Session, user: AdminUser, assignment_id: int):
-    a = await duties.get_assignment(session, assignment_id)
-    await duties.excuse(session, a, user, settings.now())
-    await session.commit()
-    flash(request, "Dienst entschuldigt")
+    try:
+        a = await duties.get_assignment(session, assignment_id)
+        await duties.excuse(session, a, user, settings.now())
+        await session.commit()
+        flash(request, "Dienst entschuldigt")
+    except DutyError as e:
+        flash(request, str(e), "error")
     return redirect("/admin")
 
 
@@ -428,7 +443,8 @@ async def admin_dispute(request: Request, session: Session, user: AdminUser, ass
         a = await duties.get_assignment(session, assignment_id)
         await duties.dispute(session, a, user, settings.now())
         await session.commit()
-        flash(request, f"Beanstandet, {a.user.display_name if a.user else 'ehemalig'} bekommt einen Strike")
+        name = a.user.display_name if a.user else "ehemalig"
+        flash(request, f"Beanstandet, {name} bekommt einen Strike")
     except DutyError as e:
         flash(request, str(e), "error")
     return redirect(safe_next(request.query_params.get("next") or "/history"))

@@ -9,9 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
-from app.models import Assignment, AwayPeriod, Duty, Slot, SlotEligible, Status, User
+from app.models import Assignment, Duty, Slot, SlotEligible, Status, User
 from app.services import scheduling, strikes
 from app.services.scheduling import Balance, Candidate
+
 
 class DutyError(Exception):
     pass
@@ -82,7 +83,9 @@ async def load_balances(session: AsyncSession, duty: Duty) -> dict[int, Balance]
             if a.user_id is None:
                 continue
             b = balances.setdefault(a.user_id, Balance())
-            b.last = slot.start_date if b.last is None else max(b.last, slot.start_date)
+            b.last_duty = (
+                slot.start_date if b.last_duty is None else max(b.last_duty, slot.start_date)
+            )
             b.credit += slot_credit(slot, a)
     return balances
 
@@ -105,7 +108,8 @@ async def materialize(session: AsyncSession, duty: Duty, day: date) -> Slot:
     existing = await get_slot(session, duty, day)
     n = people_per_slot(duty)
     if existing is not None:
-        if existing.is_penalty or len(existing.assignments) >= n:
+        already_done = any(a.status is Status.done for a in existing.assignments)
+        if existing.is_penalty or already_done or len(existing.assignments) >= n:
             return existing
         await _top_up(session, existing, n - len(existing.assignments))
         return await get_slot(session, duty, day)
@@ -135,12 +139,17 @@ async def _top_up(session: AsyncSession, slot: Slot, missing: int) -> None:
         if c.id not in known and c.is_available(slot.start_date, slot.end_date):
             slot.eligible.append(SlotEligible(user_id=c.id))
     await session.flush()
+    await _assign_from_eligible(session, slot, missing, {c.id: c.room for c in candidates})
 
+
+async def _assign_from_eligible(
+    session: AsyncSession, slot: Slot, count: int, rooms: dict[int, str]
+) -> None:
+    """Put the `count` most indebted eligible users that aren't on `slot` yet on it."""
     balances = await load_balances(session, slot.duty)
     taken = {a.user_id for a in slot.assignments}
     pool = [e.user_id for e in slot.eligible if e.user_id not in taken]
-    rooms = {c.id: c.room for c in candidates}
-    for uid in scheduling.pick(balances, pool, missing, rooms):
+    for uid in scheduling.pick(balances, pool, count, rooms):
         slot.assignments.append(Assignment(user_id=uid))
     await session.flush()
 
@@ -157,6 +166,12 @@ async def reconcile(session: AsyncSession, today: date) -> None:
     Called after someone marks themselves away, is deactivated or deleted.
     """
     candidates = {c.id: c for c in await load_candidates(session)}
+    rooms = {uid: c.room for uid, c in candidates.items()}
+
+    def is_available(user_id: int | None, slot: Slot) -> bool:
+        candidate = candidates.get(user_id)
+        return candidate is not None and candidate.is_available(slot.start_date, slot.end_date)
+
     slots = (
         await session.scalars(
             select(Slot)
@@ -165,28 +180,19 @@ async def reconcile(session: AsyncSession, today: date) -> None:
         )
     ).all()
     for slot in slots:
-        def available(uid: int | None) -> bool:
-            c = candidates.get(uid)
-            return c is not None and c.is_available(slot.start_date, slot.end_date)
-
         gone = [
-            a for a in slot.assignments if a.status is Status.pending and not available(a.user_id)
+            a
+            for a in slot.assignments
+            if a.status is Status.pending and not is_available(a.user_id, slot)
         ]
         if not gone:
             continue
         for a in gone:
             slot.assignments.remove(a)
             await session.delete(a)
-        slot.eligible = [e for e in slot.eligible if available(e.user_id)]
+        slot.eligible = [e for e in slot.eligible if is_available(e.user_id, slot)]
         await session.flush()
-
-        balances = await load_balances(session, slot.duty)
-        taken = {a.user_id for a in slot.assignments}
-        pool = [e.user_id for e in slot.eligible if e.user_id not in taken]
-        rooms = {uid: c.room for uid, c in candidates.items()}
-        for uid in scheduling.pick(balances, pool, len(gone), rooms):
-            slot.assignments.append(Assignment(user_id=uid))
-        await session.flush()
+        await _assign_from_eligible(session, slot, len(gone), rooms)
 
 
 async def process_overdue(session: AsyncSession, now: datetime) -> list[Assignment]:
@@ -313,6 +319,7 @@ async def preview(session: AsyncSession, duty: Duty, start: date, end: date) -> 
     """Expected schedule for slots starting in [start, end] that don't exist yet."""
     n = people_per_slot(duty)
     step = timedelta(days=1 if duty is Duty.kitchen else 7)
+    # Trash weeks start on Monday: skip the week that is already running on `start`.
     first, _ = slot_bounds(duty, start)
     if first < start:
         first += step
@@ -340,6 +347,7 @@ async def preview(session: AsyncSession, duty: Duty, start: date, end: date) -> 
             entries.append(PreviewEntry(*bounds, []))
         day += step
 
+    # plan() returns one list of user ids per `todo` slot, in the same order.
     planned = iter(
         scheduling.plan(
             await load_balances(session, duty), await load_candidates(session), todo, n

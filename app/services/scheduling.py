@@ -25,7 +25,7 @@ from fractions import Fraction
 class Balance:
     expected: Fraction = Fraction(0)
     credit: Fraction = Fraction(0)
-    last: date | None = None
+    last_duty: date | None = None
 
     @property
     def debt(self) -> Fraction:
@@ -68,7 +68,7 @@ def pick(
 
     def key(uid: int):
         b = balances.get(uid, Balance())
-        return (-b.debt, b.last or date.min, room_key(rooms.get(uid, "")), uid)
+        return (-b.debt, b.last_duty or date.min, room_key(rooms.get(uid, "")), uid)
 
     return sorted(eligible, key=key)[:n]
 
@@ -78,7 +78,7 @@ def credit(
 ) -> None:
     b = balances.setdefault(uid, Balance())
     b.credit += amount
-    b.last = on if b.last is None else max(b.last, on)
+    b.last_duty = on if b.last_duty is None else max(b.last_duty, on)
 
 
 def plan(
