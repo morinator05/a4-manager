@@ -160,11 +160,17 @@ async def test_first_claim_closes_the_slot(session):
     assert await strikes.active_strikes(session, p1.id) == []
 
 
-async def test_open_slot_shares_credit_until_claimed(session):
+async def test_open_slot_is_shared_for_picking_but_not_for_debt(session):
     people = await make_users(session)
     _, _, _, p1, p2 = await kitchen_pair(session, people)
     balances = await duties.load_balances(session, Duty.kitchen)
-    assert balances[p1.id].credit == balances[p2.id].credit == Fraction(1, 2)
+    assert balances[p1.id].pending == balances[p2.id].pending == Fraction(1, 2)
+    # The debt shown only changes once someone marks it done.
+    assert balances[p1.id].credit == balances[p2.id].credit == 0
+
+    # Tomorrow is picked before anyone marked today done; today's pair isn't picked again.
+    tomorrow = await duties.materialize(session, Duty.kitchen, MONDAY + timedelta(days=1))
+    assert {a.user_id for a in tomorrow.assignments}.isdisjoint({p1.id, p2.id})
 
 
 async def test_dispute_gives_strike_and_removes_credit(session):

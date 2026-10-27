@@ -59,18 +59,23 @@ async def load_candidates(session: AsyncSession) -> list[Candidate]:
 
 
 def slot_credit(slot: Slot, a: Assignment) -> Fraction:
-    """Fairness credit an assignment earns.
-
-    Whoever did it gets 1, the others 0. While a slot is still open, its pending people
-    share the job, so tomorrow's pick doesn't choose them again before anyone claimed it.
-    """
-    if slot.is_penalty:
+    """Fairness credit an assignment earns: 1 for whoever did it, 0 for the others."""
+    if slot.is_penalty or a.status is not Status.done:
         return Fraction(0)
-    if a.status is Status.done:
-        return Fraction(1)
-    if a.status is Status.pending and not any(x.status is Status.done for x in slot.assignments):
-        return Fraction(1, sum(x.status is Status.pending for x in slot.assignments))
-    return Fraction(0)
+    return Fraction(1)
+
+
+def slot_pending(slot: Slot, a: Assignment) -> Fraction:
+    """While nobody has marked a slot done, its pending people share the job.
+
+    Counts only for picking (`Balance.pending`), so tomorrow's pick doesn't choose them
+    again before anyone claimed it; their debt doesn't change.
+    """
+    if slot.is_penalty or a.status is not Status.pending:
+        return Fraction(0)
+    if any(x.status is Status.done for x in slot.assignments):
+        return Fraction(0)
+    return Fraction(1, sum(x.status is Status.pending for x in slot.assignments))
 
 
 async def load_balances(session: AsyncSession, duty: Duty) -> dict[int, Balance]:
@@ -98,6 +103,7 @@ async def load_balances(session: AsyncSession, duty: Duty) -> dict[int, Balance]
                 slot.start_date if b.last_duty is None else max(b.last_duty, slot.start_date)
             )
             b.credit += slot_credit(slot, a)
+            b.pending += slot_pending(slot, a)
     return balances
 
 
