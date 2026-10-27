@@ -4,7 +4,8 @@ Every slot (a day of kitchen duty, a week of trash duty) is one job. `n` people 
 on it (kitchen: 2, trash: 1), but only one of them does it: whoever marks it done first.
 All users available for that slot accrue an equal share `1 / len(available)` of
 *expected* work. A user's debt is `expected - credit`, where credit counts the jobs they
-actually did. The `n` users with the highest debt are picked.
+actually did. The `n` users with the highest debt are picked, not counting their share of
+slots they are on that nobody has marked done yet (see `Balance.pending`).
 
 Away or inactive users accrue nothing, so being away is automatically fair, and new
 users start at debt 0 instead of inheriting a backlog. Missed duties give no credit,
@@ -30,15 +31,24 @@ class Balance:
 
     # Sum of the user's shares of all slots they were available for.
     expected: Fraction = Fraction(0)
-    # Jobs actually done (1 each), plus shares of slots that are still open.
+    # Jobs actually done (1 each).
     credit: Fraction = Fraction(0)
+    # Shares of the open slots the user is on (nobody marked them done yet). Counts only for
+    # picking: the next slot is picked before today's is done, and today's people shouldn't
+    # be picked again just because they haven't marked it yet.
+    pending: Fraction = Fraction(0)
     # Start of the latest slot they were put on; used to break ties.
     last_duty: date | None = None
 
     @property
     def debt(self) -> Fraction:
-        """How much work the user owes; the highest debts are picked next."""
+        """How much work the user owes; changes only when a duty is marked done."""
         return self.expected - self.credit
+
+    @property
+    def priority(self) -> Fraction:
+        """The debt minus open shares; the highest are picked next."""
+        return self.debt - self.pending
 
 
 @dataclass(frozen=True)
@@ -86,9 +96,9 @@ def pick(
 
     def key(uid: int):
         b = balances.get(uid, Balance())
-        # Highest debt first; on a tie, whoever had their last duty longest ago (never = first),
-        # then by room, so the result is always the same for the same input.
-        return (-b.debt, b.last_duty or date.min, room_key(rooms.get(uid, "")), uid)
+        # Highest priority first; on a tie, whoever had their last duty longest ago (never =
+        # first), then by room, so the result is always the same for the same input.
+        return (-b.priority, b.last_duty or date.min, room_key(rooms.get(uid, "")), uid)
 
     return sorted(eligible, key=key)[:n]
 
@@ -102,6 +112,13 @@ def credit(
     b.last_duty = on if b.last_duty is None else max(b.last_duty, on)
 
 
+def reserve(balances: dict[int, Balance], uid: int, on: date, amount: Fraction) -> None:
+    """Book `amount` of a not yet done job for `uid` on the slot starting `on`."""
+    b = balances.setdefault(uid, Balance())
+    b.pending += amount
+    b.last_duty = on if b.last_duty is None else max(b.last_duty, on)
+
+
 def plan(
     balances: dict[int, Balance],
     candidates: list[Candidate],
@@ -110,7 +127,7 @@ def plan(
 ) -> list[list[int]]:
     """Simulate who will be picked for upcoming slots, for the preview.
 
-    Nobody knows yet who will claim each job, so every picked person is credited an equal
+    Nobody knows yet who will claim each job, so every picked person reserves an equal
     part of it. `balances` is copied, not changed.
 
     Returns:
@@ -124,6 +141,6 @@ def plan(
         accrue(balances, eligible)
         chosen = pick(balances, eligible, n, rooms)
         for uid in chosen:
-            credit(balances, uid, start, Fraction(1, len(chosen)))
+            reserve(balances, uid, start, Fraction(1, len(chosen)))
         result.append(chosen)
     return result
