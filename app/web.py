@@ -437,8 +437,13 @@ async def admin_edit_user(
     if password and len(password) < auth.MIN_PASSWORD_LENGTH:
         flash(request, auth.PASSWORD_TOO_SHORT, "error")
         return redirect("/admin")
+    if room_number.strip():
+        try:
+            target.room_number = users.check_room(room_number)
+        except UserError as e:
+            flash(request, str(e), "error")
+            return redirect("/admin")
     target.name = name.strip() or target.name
-    target.room_number = room_number.strip() or target.room_number
     if target.id != user.id:
         target.is_admin = is_admin
     if password:

@@ -33,7 +33,7 @@ async def make_users(session, n=15, admin=True):
             await users.create(
                 session,
                 name=f"Person {i}",
-                room_number=f"{i}",
+                room_number=f"A4{i:02d}",
                 username=f"p{i}",
                 password="secret123",
                 is_admin=admin and i == 1,
@@ -292,7 +292,7 @@ async def test_web_permissions(session, client):
     assert (await client.get("/admin")).status_code == 200
     r = await client.post(
         "/admin/users",
-        data={"name": "Neu", "room_number": "9", "username": "neu", "password": "pw123456"},
+        data={"name": "Neu", "room_number": "A420", "username": "neu", "password": "pw123456"},
     )
     assert r.status_code == 303
     assert "Neu" in (await client.get("/admin")).text
@@ -341,7 +341,7 @@ async def test_top_up_skips_slot_that_is_already_done(session):
 
     # A resident added later must not be put on the finished slot (and struck for it).
     newbie = await users.create(
-        session, name="Neu", room_number="2", username="neu", password="secret123"
+        session, name="Neu", room_number="A420", username="neu", password="secret123"
     )
     await duties.fill_current(session, MONDAY)
     await session.commit()
@@ -386,13 +386,22 @@ async def test_login_is_blocked_after_too_many_failures(session, client, monkeyp
 
 async def test_short_passwords_are_rejected(session):
     with pytest.raises(UserError):
-        await users.create(session, name="A", room_number="1", username="a", password="short")
+        await users.create(session, name="A", room_number="A401", username="a", password="short")
+
+
+def test_room_numbers():
+    assert users.check_room(" a403 ") == "A403"
+    for valid in ["A401", "A499", "B110"]:
+        assert users.check_room(valid) == valid
+    for invalid in ["A40", "A400", "A.421", "A4.1", "A4100", "4403", "AA403", ""]:
+        with pytest.raises(UserError):
+            users.check_room(invalid)
 
 
 async def test_initial_admin_only_on_empty_database(session, monkeypatch):
     monkeypatch.setattr(settings, "admin_username", "")  # whatever the local .env says
     assert await users.create_initial_admin(session) is None
-    for key, value in dict(username="Chef", password="secret123", name="Chef", room="1").items():
+    for key, value in dict(username="Chef", password="secret123", name="Chef", room="A401").items():
         monkeypatch.setattr(settings, f"admin_{key}", value)
     admin = await users.create_initial_admin(session)
     assert admin.is_admin and admin.username == "chef"

@@ -1,5 +1,6 @@
 """Residents: creating, pausing, moving out, and away periods."""
 
+import re
 from datetime import date
 
 from sqlalchemy import select
@@ -13,6 +14,24 @@ from app.services.auth import MIN_PASSWORD_LENGTH, PASSWORD_TOO_SHORT, hash_pass
 
 class UserError(Exception):
     """Invalid input; the message is German and shown to the user as is."""
+
+
+# Building letter, floor digit, room 01-99 on that floor: A403.
+ROOM_PATTERN = re.compile(r"[A-Z][0-9](0[1-9]|[1-9][0-9])")
+
+
+def check_room(room_number: str) -> str:
+    """The room number, trimmed and upper case.
+
+    Raises:
+        UserError: if it isn't like A403 (letter, floor, room 01-99).
+    """
+    room_number = room_number.strip().upper()
+    if not ROOM_PATTERN.fullmatch(room_number):
+        raise UserError(
+            f"Zimmer „{room_number}“ ungültig: Buchstabe, Stockwerk, Zimmer 01–99, z.B. A403"
+        )
+    return room_number
 
 
 async def list_users(session: AsyncSession) -> list[User]:
@@ -33,18 +52,20 @@ async def create(
     """Add a resident. Their duty balance starts at zero.
 
     Raises:
-        UserError: if a field is empty, the password is too short or the username is taken.
+        UserError: if a field is empty, the room number or password is invalid, or the
+            username is taken.
     """
     username = username.strip().lower()
     if not (name.strip() and room_number.strip() and username and password):
         raise UserError("Alle Felder müssen ausgefüllt sein")
+    room_number = check_room(room_number)
     if len(password) < MIN_PASSWORD_LENGTH:
         raise UserError(PASSWORD_TOO_SHORT)
     if await session.scalar(select(User).where(User.username == username)):
         raise UserError(f"Benutzername „{username}“ ist schon vergeben")
     user = User(
         name=name.strip(),
-        room_number=room_number.strip(),
+        room_number=room_number,
         username=username,
         password_hash=hash_password(password),
         is_admin=is_admin,
