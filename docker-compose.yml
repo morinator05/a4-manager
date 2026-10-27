@@ -3,10 +3,12 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: a4
-      POSTGRES_PASSWORD: a4
+      # From .env. Only applied when the database volume is first created.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: a4
     ports:
-      - "5432:5432"
+      # Only reachable from this machine; the app container uses the internal network.
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -20,7 +22,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+asyncpg://a4:a4@db:5432/a4
+      DATABASE_URL: postgresql+asyncpg://a4:${POSTGRES_PASSWORD}@db:5432/a4
       SECRET_KEY: ${SECRET_KEY:-}
     ports:
       - "8000:8000"

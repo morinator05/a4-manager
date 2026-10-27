@@ -52,7 +52,9 @@ uv run python scripts/create_admin.py   # first Flursprecher
 uv run fastapi dev app/main.py          # http://localhost:8000
 ```
 
-Everything in Docker: `docker compose --profile app up --build`.
+Everything in Docker: `docker compose --profile app up --build`. On a server, set a random
+`POSTGRES_PASSWORD` in `.env` before the first start (later changes need
+`ALTER USER a4 PASSWORD '...'` in the database).
 Test residents: `uv run python scripts/seed.py`.
 
 ## Tests
