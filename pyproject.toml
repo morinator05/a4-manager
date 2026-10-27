@@ -2,9 +2,7 @@
 name = "a4-manager"
 version = "0.1.0"
 description = "Duty manager (Küchendienst, Mülldienst, strikes) for dorm floor A4"
-authors = [
-    { name = "Mori", email = "roemoben@gmail.com" }
-]
+authors = [{ name = "Mori" }]
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.20.1",
