@@ -1,0 +1,35 @@
+<section class="card" id="card-{{ duty.value }}">
+  <h2>
+    {{ duty.label }}
+    <span class="muted">
+      {% if duty == Duty.kitchen %}heute{% elif slot %}{{ slot.start_date|d }}–{{ slot.end_date|d }}{% endif %}
+    </span>
+  </h2>
+  {% if slot and slot.is_penalty %}<p class="penalty">Strafdienst (3 Strikes)</p>{% endif %}
+  {% if not slot or not slot.assignments %}
+    <p class="muted">Niemand eingeteilt.</p>
+  {% else %}
+    {% for a in slot.assignments %}
+      <div class="person">
+        <div>
+          <div class="name">{{ a.user.display_name if a.user else "ehemalig" }}</div>
+        </div>
+        {% if can_mark(a) %}
+          <button hx-post="/assignments/{{ a.id }}/done?card=1"
+                  hx-target="#card-{{ duty.value }}" hx-swap="outerHTML">Erledigt</button>
+        {% else %}
+          {% include "partials/status.html" %}
+        {% endif %}
+      </div>
+    {% endfor %}
+    {% set claimed = slot.assignments|selectattr("status", "equalto", Status.done)|first %}
+    {% if claimed %}
+      <p class="muted">Erledigt von {{ claimed.user.display_name if claimed.user else "ehemalig" }}
+        am {{ claimed.completed_at|dt }}</p>
+    {% elif slot.assignments|length > 1 %}
+      <p class="muted">Einer von euch macht es. Wer es erledigt hat, trägt sich bis {{ deadline|dt }} ein.</p>
+    {% else %}
+      <p class="muted">Eintragen bis {{ deadline|dt }}</p>
+    {% endif %}
+  {% endif %}
+</section>

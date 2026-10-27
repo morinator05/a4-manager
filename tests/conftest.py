@@ -1,0 +1,47 @@
+import os
+
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://a4:a4@localhost:5432/a4_test")
+os.environ["RUN_SCHEDULER"] = "false"
+
+import asyncpg  # noqa: E402
+import pytest  # noqa: E402
+from sqlalchemy.engine import make_url  # noqa: E402
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
+from sqlalchemy.pool import NullPool  # noqa: E402
+
+from app import db  # noqa: E402
+from app.config import settings  # noqa: E402
+from app.models import Base  # noqa: E402
+
+
+async def ensure_test_database() -> None:
+    url = make_url(settings.database_url)
+    params = dict(user=url.username, password=url.password, host=url.host, port=url.port)
+    try:
+        conn = await asyncpg.connect(**params, database=url.database)
+    except asyncpg.InvalidCatalogNameError:
+        conn = await asyncpg.connect(**params, database="postgres")
+        await conn.execute(f'CREATE DATABASE "{url.database}"')
+    await conn.close()
+
+
+@pytest.fixture
+async def session_factory(monkeypatch):
+    engine = create_async_engine(settings.database_url, poolclass=NullPool)
+    try:
+        await ensure_test_database()
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(Base.metadata.create_all)
+    except OSError:
+        pytest.skip("test database not reachable (docker compose up -d db)")
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    monkeypatch.setattr(db, "SessionLocal", factory)
+    yield factory
+    await engine.dispose()
+
+
+@pytest.fixture
+async def session(session_factory):
+    async with session_factory() as s:
+        yield s

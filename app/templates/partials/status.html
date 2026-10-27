@@ -1,0 +1,2 @@
+{% if a.disputed_at %}<span class="badge s-missed">beanstandet</span>
+{%- else %}<span class="badge s-{{ a.status.value }}">{{ a.status.label }}</span>{% endif %}

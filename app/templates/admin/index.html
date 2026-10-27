@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Flursprecher</h1>
+
+<section class="card">
+  <h2>Bewohner hinzufügen</h2>
+  <form method="post" action="/admin/users" class="row">
+    <label>Name <input name="name" required></label>
+    <label>Zimmer <input name="room_number" size="6" placeholder="z.B. A404" required></label>
+    <label>Benutzername <input name="username" required></label>
+    <label>Startpasswort <input name="password" required></label>
+    <label><span><input type="checkbox" name="is_admin" value="true"> Flursprecher</span></label>
+    <button>Hinzufügen</button>
+  </form>
+</section>
+
+<h2>Bewohner ({{ users|selectattr("active")|list|length }} aktiv)</h2>
+<div class="table-wrap"><table>
+  <tr><th>Bewohner</th><th>Status</th><th></th></tr>
+  {% for u in users %}
+    <tr>
+      <td>
+        <details>
+          <summary><strong>{{ u.display_name }}</strong> <span class="muted">{{ u.name }} · @{{ u.username }}</span></summary>
+          <form method="post" action="/admin/users/{{ u.id }}/edit" class="row">
+            <label>Name <input name="name" value="{{ u.name }}"></label>
+            <label>Zimmer <input name="room_number" value="{{ u.room_number }}" size="6"></label>
+            <label>Neues Passwort <input name="password" placeholder="unverändert"></label>
+            <label><span><input type="checkbox" name="is_admin" value="true" {% if u.is_admin %}checked{% endif %}
+                   {% if u.id == user.id %}disabled{% endif %}> Flursprecher</span></label>
+            <button>Speichern</button>
+          </form>
+        </details>
+      </td>
+      <td>{% if u.active %}aktiv{% else %}<span class="muted">inaktiv</span>{% endif %}
+          {% if u.is_admin %}<span class="badge">Flursprecher</span>{% endif %}</td>
+      <td style="white-space:nowrap">
+        <form method="post" action="/admin/users/{{ u.id }}/active" class="inline">
+          <button class="secondary">{{ "Deaktivieren" if u.active else "Aktivieren" }}</button>
+        </form>
+        {% if u.id != user.id %}
+        <form method="post" action="/admin/users/{{ u.id }}/delete" class="inline"
+              hx-confirm="{{ u.display_name }} wirklich löschen (Auszug)? Das kann nicht rückgängig gemacht werden.">
+          <button class="danger">Löschen</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+</table></div>
+
+<section class="card">
+  <h2>Strike vergeben</h2>
+  <form method="post" action="/admin/strikes" class="row">
+    <label>Bewohner
+      <select name="user_id" required>
+        {% for u in users %}<option value="{{ u.id }}">{{ u.display_name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Grund <input name="reason" size="30" required></label>
+    <button class="danger">Strike vergeben</button>
+  </form>
+</section>
+
+<h2>Strikes</h2>
+<div class="table-wrap"><table>
+  <tr><th>Datum</th><th>Bewohner</th><th>Grund</th><th>Von</th><th>Status</th></tr>
+  {% for s in strikes %}
+    <tr>
+      <td>{{ s.created_at|dt }}</td>
+      <td>{{ s.user.display_name }}</td>
+      <td>{{ s.reason }}</td>
+      <td>{{ "automatisch" if s.auto else (s.issued_by.display_name if s.issued_by else "–") }}</td>
+      <td>
+        {% if s.revoked_at %}<span class="badge s-excused">zurückgenommen</span>
+        {% elif s.redeemed_by_assignment_id %}<span class="badge s-excused">abgearbeitet</span>
+        {% else %}
+          <form method="post" action="/admin/strikes/{{ s.id }}/revoke" class="inline">
+            <button class="secondary">Zurücknehmen</button>
+          </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% else %}<tr><td class="muted">Keine Strikes.</td></tr>{% endfor %}
+</table></div>
+
+<h2>Dienste (letzte 14 Tage und geplant)</h2>
+<div class="table-wrap"><table>
+  <tr><th>Datum</th><th>Dienst</th><th>Bewohner</th><th>Status</th><th></th></tr>
+  {% for slot in slots %}
+    {% set slot_done = slot.assignments|selectattr("status", "equalto", Status.done)|list %}
+    {% for a in slot.assignments %}
+      <tr>
+        <td>{{ slot.start_date|weekday }} {{ slot.start_date|d }}{% if slot.end_date != slot.start_date %}–{{ slot.end_date|d }}{% endif %}</td>
+        <td>{{ slot.duty.label }}{% if slot.is_penalty %} <span class="penalty">(Strafe)</span>{% endif %}</td>
+        <td>{{ a.user.display_name if a.user else "ehemalig" }}</td>
+        <td>{% include "partials/status.html" %}</td>
+        <td style="white-space:nowrap">
+          {% if not slot_done %}
+            <form method="post" action="/assignments/{{ a.id }}/done?next=/admin" class="inline">
+              <button class="secondary">Erledigt</button></form>
+          {% endif %}
+          {% if a.status == Status.done %}
+            <form method="post" action="/admin/assignments/{{ a.id }}/dispute?next=/admin" class="inline"
+                  hx-confirm="Eingetragen, aber nicht gemacht? Gibt einen Strike.">
+              <button class="danger">Beanstanden</button></form>
+          {% endif %}
+          {% if a.status in (Status.pending, Status.missed) %}
+            <form method="post" action="/admin/assignments/{{ a.id }}/excuse" class="inline">
+              <button class="secondary">Entschuldigen</button></form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+  {% endfor %}
+</table></div>
+
+<form method="post" action="/admin/tick" style="margin-top:1rem">
+  <button class="secondary">Tagesjob jetzt ausführen</button>
+  <span class="muted">Läuft automatisch um 00:05 und nach der Eintrage-Frist.</span>
+</form>
+{% endblock %}

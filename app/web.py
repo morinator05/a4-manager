@@ -1,0 +1,441 @@
+from datetime import date, timedelta
+from pathlib import Path
+from typing import Annotated
+
+from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+
+from app.config import settings
+from app.deps import AdminUser, CurrentUser, OptionalUser, Session
+from app.models import Assignment, AwayPeriod, Duty, Slot, Status, Strike, User
+from app.services import auth, duties, jobs, strikes, users
+from app.services.duties import DutyError
+from app.services.users import UserError
+
+router = APIRouter()
+templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
+templates.env.globals["Duty"] = Duty
+templates.env.globals["Status"] = Status
+templates.env.filters["d"] = lambda d: f"{d:%d.%m.}" if d else ""
+templates.env.filters["dt"] = lambda d: f"{d.astimezone(settings.tz):%d.%m.%Y %H:%M}" if d else ""
+templates.env.filters["weekday"] = lambda d: ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"][d.weekday()]
+
+
+def flash(request: Request, message: str, kind: str = "ok") -> None:
+    request.session.setdefault("flash", []).append([kind, message])
+
+
+def render(request: Request, name: str, user: User | None, **ctx) -> HTMLResponse:
+    messages = request.session.pop("flash", [])
+    return templates.TemplateResponse(
+        request, name, {"user": user, "messages": messages, "today": settings.today(), **ctx}
+    )
+
+
+def redirect(url: str) -> RedirectResponse:
+    return RedirectResponse(url, status_code=303)
+
+
+def safe_next(url: str | None) -> str:
+    if url and url.startswith("/") and not url.startswith("//"):
+        return url
+    return "/"
+
+
+async def user_names(session) -> dict[int, User]:
+    return {u.id: u for u in await session.scalars(select(User))}
+
+
+def duty_card_ctx(slot: Slot | None, duty: Duty, user: User | None) -> dict:
+    now = settings.now()
+    return {
+        "slot": slot,
+        "duty": duty,
+        "deadline": duties.deadline(slot) if slot else None,
+        "can_mark": (lambda a: user is not None and duties.can_mark_done(a, user, now)),
+    }
+
+
+# --- auth -------------------------------------------------------------------
+
+
+@router.get("/login")
+async def login_page(request: Request, user: OptionalUser, next: str = "/"):
+    if user:
+        return redirect(safe_next(next))
+    return render(request, "login.html", None, next=next)
+
+
+@router.post("/login")
+async def login(
+    request: Request,
+    session: Session,
+    username: Annotated[str, Form()],
+    password: Annotated[str, Form()],
+    next: Annotated[str, Form()] = "/",
+):
+    user = await auth.authenticate(session, username, password)
+    if user is None:
+        flash(request, "Benutzername oder Passwort falsch", "error")
+        return redirect(f"/login?next={safe_next(next)}")
+    request.session["user_id"] = user.id
+    return redirect(safe_next(next))
+
+
+@router.post("/logout")
+async def logout(request: Request):
+    request.session.clear()
+    return redirect("/")
+
+
+# --- dashboard --------------------------------------------------------------
+
+
+@router.get("/")
+async def dashboard(request: Request, session: Session, user: OptionalUser):
+    today = settings.today()
+    kitchen = await duties.get_slot(session, Duty.kitchen, today)
+    trash = await duties.get_slot(session, Duty.trash, today)
+    if kitchen is None or trash is None:
+        await jobs.daily_tick(session, settings.now())
+        kitchen = await duties.get_slot(session, Duty.kitchen, today)
+        trash = await duties.get_slot(session, Duty.trash, today)
+
+    horizon = today + timedelta(days=settings.preview_days)
+    return render(
+        request,
+        "dashboard.html",
+        user,
+        kitchen=duty_card_ctx(kitchen, Duty.kitchen, user),
+        trash=duty_card_ctx(trash, Duty.trash, user),
+        kitchen_preview=await duties.preview(session, Duty.kitchen, today + timedelta(days=1), horizon),
+        trash_preview=await duties.preview(session, Duty.trash, today + timedelta(days=1), horizon),
+        names=await user_names(session),
+    )
+
+
+@router.post("/assignments/{assignment_id}/done")
+async def mark_done(request: Request, session: Session, user: CurrentUser, assignment_id: int):
+    try:
+        a = await duties.get_assignment(session, assignment_id)
+        await duties.mark_done(session, a, user, settings.now())
+        await session.commit()
+    except DutyError as e:
+        flash(request, str(e), "error")
+        return redirect(request.headers.get("HX-Current-URL") or "/")
+    if request.headers.get("HX-Request") and request.query_params.get("card"):
+        slot = await duties.get_slot(session, a.slot.duty, a.slot.start_date)
+        return templates.TemplateResponse(
+            request, "partials/duty_card.html", duty_card_ctx(slot, slot.duty, user)
+        )
+    flash(request, "Als erledigt eingetragen")
+    return redirect(safe_next(request.query_params.get("next")))
+
+
+# --- personal page ----------------------------------------------------------
+
+
+@router.get("/me")
+async def me(request: Request, session: Session, user: CurrentUser):
+    aways = await session.scalars(
+        select(AwayPeriod)
+        .where(AwayPeriod.user_id == user.id, AwayPeriod.end_date >= settings.today())
+        .order_by(AwayPeriod.start_date)
+    )
+    my_strikes = await session.scalars(
+        select(Strike).where(Strike.user_id == user.id).order_by(Strike.created_at.desc())
+    )
+    history = await session.scalars(
+        select(Assignment)
+        .join(Assignment.slot)
+        .where(Assignment.user_id == user.id)
+        .options(selectinload(Assignment.slot))
+        .order_by(Slot.start_date.desc())
+        .limit(30)
+    )
+    return render(
+        request,
+        "me.html",
+        user,
+        aways=list(aways),
+        strikes=list(my_strikes),
+        history=list(history),
+    )
+
+
+@router.post("/me/away")
+async def add_away(
+    request: Request,
+    session: Session,
+    user: CurrentUser,
+    start_date: Annotated[date, Form()],
+    end_date: Annotated[date, Form()],
+):
+    try:
+        await users.add_away(session, user, start_date, end_date, settings.today())
+        await session.commit()
+        flash(request, "Abwesenheit eingetragen")
+    except UserError as e:
+        flash(request, str(e), "error")
+    return redirect("/me")
+
+
+@router.post("/me/away/{away_id}/delete")
+async def delete_away(request: Request, session: Session, user: CurrentUser, away_id: int):
+    away = await session.get(AwayPeriod, away_id)
+    if away is None or (away.user_id != user.id and not user.is_admin):
+        raise HTTPException(404)
+    await users.remove_away(session, away)
+    await session.commit()
+    flash(request, "Abwesenheit gelöscht")
+    return redirect("/me")
+
+
+@router.post("/me/password")
+async def change_password(
+    request: Request,
+    session: Session,
+    user: CurrentUser,
+    old_password: Annotated[str, Form()],
+    new_password: Annotated[str, Form()],
+):
+    if not auth.verify_password(old_password, user.password_hash):
+        flash(request, "Altes Passwort falsch", "error")
+    elif len(new_password) < 6:
+        flash(request, "Neues Passwort muss mindestens 6 Zeichen haben", "error")
+    else:
+        user.password_hash = auth.hash_password(new_password)
+        await session.commit()
+        flash(request, "Passwort geändert")
+    return redirect("/me")
+
+
+# --- history ----------------------------------------------------------------
+
+HISTORY_DAYS = 28
+
+
+@router.get("/history")
+async def history(request: Request, session: Session, user: CurrentUser, until: date | None = None):
+    today = settings.today()
+    until = min(until or today, today)
+    since = until - timedelta(days=HISTORY_DAYS - 1)
+    slots = await session.scalars(
+        select(Slot)
+        .where(Slot.start_date <= until, Slot.end_date >= since)
+        .options(
+            selectinload(Slot.assignments).selectinload(Assignment.user),
+            selectinload(Slot.assignments).selectinload(Assignment.completed_by),
+        )
+        .order_by(Slot.start_date.desc(), Slot.duty)
+    )
+    return render(
+        request,
+        "history.html",
+        user,
+        slots=list(slots),
+        since=since,
+        until=until,
+        older=since - timedelta(days=1),
+        newer=min(until + timedelta(days=HISTORY_DAYS), today) if until < today else None,
+    )
+
+
+# --- stats ------------------------------------------------------------------
+
+
+@router.get("/stats")
+async def stats(request: Request, session: Session, user: OptionalUser):
+    all_users = await users.list_users(session)
+    balances = {d: await duties.load_balances(session, d) for d in Duty}
+    rows = (
+        await session.execute(
+            select(Assignment.user_id, Slot.duty, Slot.is_penalty, Assignment.status).join(
+                Assignment.slot
+            )
+        )
+    ).all()
+    counts: dict[tuple, int] = {}
+    for uid, duty, is_penalty, status in rows:
+        key = (uid, duty, "penalty" if is_penalty else status)
+        counts[key] = counts.get(key, 0) + 1
+    active = {u.id: len(await strikes.active_strikes(session, u.id)) for u in all_users}
+    return render(
+        request,
+        "stats.html",
+        user,
+        users=all_users,
+        balances=balances,
+        counts=counts,
+        active=active,
+        threshold=settings.strike_threshold,
+    )
+
+
+# --- admin ------------------------------------------------------------------
+
+
+@router.get("/admin")
+async def admin(request: Request, session: Session, user: AdminUser):
+    all_users = await users.list_users(session)
+    since = settings.today() - timedelta(days=14)
+    slots = await session.scalars(
+        select(Slot)
+        .where(Slot.end_date >= since)
+        .options(selectinload(Slot.assignments).selectinload(Assignment.user))
+        .order_by(Slot.start_date.desc(), Slot.duty)
+    )
+    all_strikes = await session.scalars(
+        select(Strike)
+        .options(selectinload(Strike.user), selectinload(Strike.issued_by))
+        .order_by(Strike.created_at.desc())
+        .limit(50)
+    )
+    return render(
+        request,
+        "admin/index.html",
+        user,
+        users=all_users,
+        slots=list(slots),
+        strikes=list(all_strikes),
+    )
+
+
+@router.post("/admin/users")
+async def admin_create_user(
+    request: Request,
+    session: Session,
+    user: AdminUser,
+    name: Annotated[str, Form()],
+    room_number: Annotated[str, Form()],
+    username: Annotated[str, Form()],
+    password: Annotated[str, Form()],
+    is_admin: Annotated[bool, Form()] = False,
+):
+    try:
+        new = await users.create(
+            session,
+            name=name,
+            room_number=room_number,
+            username=username,
+            password=password,
+            is_admin=is_admin,
+        )
+        await duties.fill_current(session, settings.today())
+        await session.commit()
+        flash(request, f"{new.display_name} hinzugefügt")
+    except UserError as e:
+        flash(request, str(e), "error")
+    return redirect("/admin")
+
+
+async def _get_user(session, user_id: int) -> User:
+    target = await session.get(User, user_id)
+    if target is None:
+        raise HTTPException(404)
+    return target
+
+
+@router.post("/admin/users/{user_id}/edit")
+async def admin_edit_user(
+    request: Request,
+    session: Session,
+    user: AdminUser,
+    user_id: int,
+    name: Annotated[str, Form()],
+    room_number: Annotated[str, Form()],
+    password: Annotated[str, Form()] = "",
+    is_admin: Annotated[bool, Form()] = False,
+):
+    target = await _get_user(session, user_id)
+    target.name = name.strip() or target.name
+    target.room_number = room_number.strip() or target.room_number
+    if target.id != user.id:
+        target.is_admin = is_admin
+    if password:
+        target.password_hash = auth.hash_password(password)
+    await session.commit()
+    flash(request, f"{target.display_name} gespeichert")
+    return redirect("/admin")
+
+
+@router.post("/admin/users/{user_id}/active")
+async def admin_toggle_active(request: Request, session: Session, user: AdminUser, user_id: int):
+    target = await _get_user(session, user_id)
+    await users.set_active(session, target, not target.active, settings.today())
+    await session.commit()
+    flash(request, f"{target.display_name} ist jetzt {'aktiv' if target.active else 'inaktiv'}")
+    return redirect("/admin")
+
+
+@router.post("/admin/users/{user_id}/delete")
+async def admin_delete_user(request: Request, session: Session, user: AdminUser, user_id: int):
+    target = await _get_user(session, user_id)
+    if target.id == user.id:
+        flash(request, "Du kannst dich nicht selbst löschen", "error")
+        return redirect("/admin")
+    name = target.display_name
+    await users.delete(session, target, settings.today())
+    await session.commit()
+    flash(request, f"{name} gelöscht")
+    return redirect("/admin")
+
+
+@router.post("/admin/strikes")
+async def admin_issue_strike(
+    request: Request,
+    session: Session,
+    user: AdminUser,
+    user_id: Annotated[int, Form()],
+    reason: Annotated[str, Form()],
+):
+    target = await _get_user(session, user_id)
+    await strikes.issue(
+        session, user_id=target.id, reason=reason.strip() or "–", issued_by_id=user.id,
+        today=settings.today(),
+    )
+    await session.commit()
+    flash(request, f"Strike an {target.display_name} vergeben")
+    return redirect("/admin")
+
+
+@router.post("/admin/strikes/{strike_id}/revoke")
+async def admin_revoke_strike(request: Request, session: Session, user: AdminUser, strike_id: int):
+    strike = await session.get(Strike, strike_id)
+    if strike is None:
+        raise HTTPException(404)
+    await strikes.revoke(session, strike, settings.now())
+    await session.commit()
+    flash(request, "Strike zurückgenommen")
+    return redirect("/admin")
+
+
+@router.post("/admin/assignments/{assignment_id}/excuse")
+async def admin_excuse(request: Request, session: Session, user: AdminUser, assignment_id: int):
+    a = await duties.get_assignment(session, assignment_id)
+    await duties.excuse(session, a, user, settings.now())
+    await session.commit()
+    flash(request, "Dienst entschuldigt")
+    return redirect("/admin")
+
+
+@router.post("/admin/assignments/{assignment_id}/dispute")
+async def admin_dispute(request: Request, session: Session, user: AdminUser, assignment_id: int):
+    try:
+        a = await duties.get_assignment(session, assignment_id)
+        await duties.dispute(session, a, user, settings.now())
+        await session.commit()
+        flash(request, f"Beanstandet, {a.user.display_name if a.user else 'ehemalig'} bekommt einen Strike")
+    except DutyError as e:
+        flash(request, str(e), "error")
+    return redirect(safe_next(request.query_params.get("next") or "/history"))
+
+
+@router.post("/admin/tick")
+async def admin_tick(request: Request, session: Session, user: AdminUser):
+    await jobs.daily_tick(session, settings.now())
+    flash(request, "Tagesjob ausgeführt")
+    return redirect("/admin")

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ user.display_name }}</h1>
+{% if not user.active %}<p class="flash error">Du bist inaktiv und wirst nicht eingeteilt.</p>{% endif %}
+
+<div class="grid">
+  <section class="card">
+    <h2>Abwesenheit</h2>
+    <p class="muted">Während du weg bist, wirst du nicht eingeteilt (und es zählt nicht gegen dich).</p>
+    <form method="post" action="/me/away" class="row">
+      <label>Von <input type="date" name="start_date" value="{{ today }}" required></label>
+      <label>Bis <input type="date" name="end_date" required></label>
+      <button>Eintragen</button>
+    </form>
+    {% for a in aways %}
+      <div class="person">
+        <span>{{ a.start_date.strftime("%d.%m.%Y") }} – {{ a.end_date.strftime("%d.%m.%Y") }}</span>
+        <form method="post" action="/me/away/{{ a.id }}/delete" class="inline">
+          <button class="danger">Löschen</button>
+        </form>
+      </div>
+    {% endfor %}
+  </section>
+
+  <section class="card">
+    <h2>Passwort ändern</h2>
+    <form method="post" action="/me/password" class="row">
+      <label>Altes Passwort <input type="password" name="old_password" autocomplete="current-password" required></label>
+      <label>Neues Passwort <input type="password" name="new_password" autocomplete="new-password" minlength="6" required></label>
+      <button>Ändern</button>
+    </form>
+  </section>
+</div>
+
+<h2>Strikes</h2>
+{% set active = strikes|selectattr("is_active")|list %}
+<p>{{ active|length }} aktiv</p>
+<div class="table-wrap"><table>
+  {% for s in strikes %}
+    <tr>
+      <td>{{ s.created_at|dt }}</td>
+      <td>{{ s.reason }}</td>
+      <td>{% if s.revoked_at %}<span class="badge s-excused">zurückgenommen</span>
+          {% elif s.redeemed_by_assignment_id %}<span class="badge s-excused">abgearbeitet</span>
+          {% else %}<span class="badge s-missed">aktiv</span>{% endif %}</td>
+    </tr>
+  {% else %}<tr><td class="muted">Keine Strikes</td></tr>{% endfor %}
+</table></div>
+
+<h2>Meine letzten Dienste</h2>
+<div class="table-wrap"><table>
+  {% for a in history %}
+    <tr>
+      <td>{{ a.slot.start_date.strftime("%d.%m.%Y") }}</td>
+      <td>{{ a.slot.duty.label }}{% if a.slot.is_penalty %} <span class="penalty">(Strafe)</span>{% endif %}</td>
+      <td>{% include "partials/status.html" %}</td>
+    </tr>
+  {% else %}<tr><td class="muted">Noch keine Dienste.</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

@@ -1,0 +1,30 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: a4
+      POSTGRES_PASSWORD: a4
+      POSTGRES_DB: a4
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U a4"]
+      interval: 5s
+      retries: 10
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://a4:a4@db:5432/a4
+      SECRET_KEY: ${SECRET_KEY:-change-me}
+    ports:
+      - "8000:8000"
+    profiles: ["app"]
+
+volumes:
+  pgdata:
