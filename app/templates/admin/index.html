@@ -8,11 +8,11 @@
     <summary>Bewohner hinzufügen</summary>
     <div class="panel">
     <form method="post" action="/admin/users" class="row">
-      <label>Name <input name="name" required></label>
+      <label>Name <input name="name" size="16" required></label>
       <label>Zimmer <input name="room_number" size="6" placeholder="z.B. A404" required pattern="[A-Za-z][0-9](0[1-9]|[1-9][0-9])" title="Buchstabe, Stockwerk, Zimmer 01–99, z.B. A403"></label>
-      <label>Benutzername <input name="username" required></label>
-      <label>Startpasswort <input name="password" minlength="{{ min_password_length }}" required></label>
-      <label class="check"><input type="checkbox" name="is_admin" value="true"> Flursprecher</label>
+      <label>Benutzername <input name="username" size="14" required></label>
+      <label>Startpasswort <input name="password" size="14" minlength="{{ min_password_length }}" required></label>
+      <label class="check"><span><input type="checkbox" name="is_admin" value="true"> Flursprecher</span></label>
       <button>Hinzufügen</button>
     </form>
     </div>
@@ -31,8 +31,8 @@
           <label>Name <input name="name" value="{{ u.name }}"></label>
           <label>Zimmer <input name="room_number" value="{{ u.room_number }}" size="6" pattern="[A-Za-z][0-9](0[1-9]|[1-9][0-9])" title="Buchstabe, Stockwerk, Zimmer 01–99, z.B. A403"></label>
           <label>Neues Passwort <input name="password" minlength="{{ min_password_length }}" placeholder="unverändert"></label>
-          <label class="check"><input type="checkbox" name="is_admin" value="true" {% if u.is_admin %}checked{% endif %}
-                 {% if u.id == user.id %}disabled{% endif %}> Flursprecher</label>
+          <label class="check"><span><input type="checkbox" name="is_admin" value="true" {% if u.is_admin %}checked{% endif %}
+                 {% if u.id == user.id %}disabled{% endif %}> Flursprecher</span></label>
           <button>Speichern</button>
         </form>
         <div class="actions">
