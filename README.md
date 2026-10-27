@@ -19,6 +19,8 @@ with the highest debt are picked next.
 - New residents start at debt 0.
 - A missed duty gives no credit, so you come up again soon.
 - Ties go to whoever had their last duty longest ago.
+- On the Statistik page, "Schuld" is this debt. Example with 15 residents: today's slot puts
+  everyone at 1/15 ≈ 0.07, whoever does it ends up at 0.07 − 1 ≈ −0.93. All debts add up to 0.
 
 **Strikes**
 - A missed duty gives every assigned person a strike.
@@ -26,8 +28,8 @@ with the highest debt are picked next.
 - 3 active strikes give a penalty Mülldienst week (the next free one). It replaces the regular
   Mülldienst of that week and doesn't count for fairness. The 3 strikes are then paid off.
 
-**Flursprecher (admin)**
-- Adds, pauses and deletes residents.
+**Flursprecher (admin)**, on the "Verwaltung" page
+- Adds, edits, pauses ("Deaktivieren") and deletes residents.
 - Can mark any duty done or excuse it (no strike, no credit).
 - "Beanstanden" in the history: marked done but not done. The claimer loses the credit and gets a strike.
 
@@ -35,9 +37,10 @@ with the highest debt are picked next.
 - Away, paused or deleted residents are replaced on their open duties automatically.
 - Moving out: delete the resident. Their history stays (as "ehemalig") and nobody inherits their share.
 - Moving in: add a new resident, don't rename the old account. They start from zero.
+- Room numbers look like `A403`: building letter, floor, room 01–99 on that floor.
 
 **Daily job**: runs at 00:05 and 12:05. It marks missed duties and picks today's and this
-week's people. The Flursprecher page can run it by hand.
+week's people. The Verwaltung page can run it by hand.
 
 All numbers (people per slot, deadline, strike limit) are settings in `.env`, see `.env.example`.
 
@@ -49,11 +52,15 @@ docker compose up -d --build            # database + app, http://localhost:8000
 docker compose exec app uv run --no-dev python scripts/create_admin.py   # first Flursprecher
 ```
 
-Instead of `create_admin.py`, the first Flursprecher can come from `ADMIN_USERNAME`,
-`ADMIN_PASSWORD`, `ADMIN_NAME` and `ADMIN_ROOM` in `.env`: the app creates it on startup if
-there are no users yet. The app runs the migrations on every start. On a server, set a random `POSTGRES_PASSWORD`
-in `.env` before the first start (later changes need `ALTER USER a4 PASSWORD '...'` in the
-database). Test residents: `docker compose exec app uv run --no-dev python scripts/seed.py`.
+- **First Flursprecher without the script:** set `ADMIN_USERNAME`, `ADMIN_PASSWORD`,
+  `ADMIN_NAME` and `ADMIN_ROOM` in `.env`. The app creates it on startup while there are no
+  users at all, so a deleted admin doesn't come back.
+- **Changes:** `docker compose up -d --build` again. The app runs the migrations on every start
+  and reads all settings from `.env`.
+- **Server:** set a random `POSTGRES_PASSWORD` in `.env` before the first start (later changes
+  need `ALTER USER a4 PASSWORD '...'` in the database).
+- **Test residents:** `docker compose exec app uv run --no-dev python scripts/seed.py`.
+- **Start over:** `docker compose down -v` deletes the database.
 
 For development with auto-reload, start only the database and run the app locally:
 
