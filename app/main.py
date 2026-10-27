@@ -12,16 +12,26 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings
+from app.db import SessionLocal
 from app.deps import LoginRequired
+from app.services import users
 from app.services.jobs import scheduled_tick
 from app.web import router
 
 logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Runs the daily job once on startup and then on a schedule while the app is up."""
+    """Creates the first Flursprecher if configured, then runs the daily job once on startup
+    and on a schedule while the app is up."""
+    async with SessionLocal() as session:
+        # Invalid ADMIN_* settings stop the startup, like a missing SECRET_KEY does.
+        admin = await users.create_initial_admin(session)
+        if admin:
+            await session.commit()
+            log.info("Created Flursprecher @%s", admin.username)
     scheduler = None
     if settings.run_scheduler:
         scheduler = AsyncIOScheduler(timezone=settings.tz)

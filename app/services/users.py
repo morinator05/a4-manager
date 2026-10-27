@@ -5,6 +5,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models import Assignment, AwayPeriod, Slot, Status, User
 from app.services import duties, scheduling
 from app.services.auth import MIN_PASSWORD_LENGTH, PASSWORD_TOO_SHORT, hash_password
@@ -52,6 +53,28 @@ async def create(
     session.add(user)
     await session.flush()
     return user
+
+
+async def create_initial_admin(session: AsyncSession) -> User | None:
+    """Create the Flursprecher from the `ADMIN_*` settings, if set and there are no users yet.
+
+    Only an empty database counts, so an admin deleted later doesn't come back on restart.
+
+    Raises:
+        UserError: if the settings are incomplete or invalid (e.g. the password is too short).
+    """
+    if not settings.admin_username:
+        return None
+    if await session.scalar(select(User.id).limit(1)) is not None:
+        return None
+    return await create(
+        session,
+        name=settings.admin_name,
+        room_number=settings.admin_room,
+        username=settings.admin_username,
+        password=settings.admin_password,
+        is_admin=True,
+    )
 
 
 async def set_active(session: AsyncSession, user: User, active: bool, today: date) -> None:

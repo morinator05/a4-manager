@@ -45,17 +45,24 @@ All numbers (people per slot, deadline, strike limit) are settings in `.env`, se
 
 ```bash
 cp .env.example .env                    # set SECRET_KEY: openssl rand -hex 32
+docker compose up -d --build            # database + app, http://localhost:8000
+docker compose exec app uv run --no-dev python scripts/create_admin.py   # first Flursprecher
+```
+
+Instead of `create_admin.py`, the first Flursprecher can come from `ADMIN_USERNAME`,
+`ADMIN_PASSWORD`, `ADMIN_NAME` and `ADMIN_ROOM` in `.env`: the app creates it on startup if
+there are no users yet. The app runs the migrations on every start. On a server, set a random `POSTGRES_PASSWORD`
+in `.env` before the first start (later changes need `ALTER USER a4 PASSWORD '...'` in the
+database). Test residents: `docker compose exec app uv run --no-dev python scripts/seed.py`.
+
+For development with auto-reload, start only the database and run the app locally:
+
+```bash
 docker compose up -d db
 uv sync
 uv run alembic upgrade head
-uv run python scripts/create_admin.py   # first Flursprecher
 uv run fastapi dev app/main.py          # http://localhost:8000
 ```
-
-Everything in Docker: `docker compose --profile app up --build`. On a server, set a random
-`POSTGRES_PASSWORD` in `.env` before the first start (later changes need
-`ALTER USER a4 PASSWORD '...'` in the database).
-Test residents: `uv run python scripts/seed.py`.
 
 ## Tests
 

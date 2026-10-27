@@ -389,6 +389,18 @@ async def test_short_passwords_are_rejected(session):
         await users.create(session, name="A", room_number="1", username="a", password="short")
 
 
+async def test_initial_admin_only_on_empty_database(session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_username", "")  # whatever the local .env says
+    assert await users.create_initial_admin(session) is None
+    for key, value in dict(username="Chef", password="secret123", name="Chef", room="1").items():
+        monkeypatch.setattr(settings, f"admin_{key}", value)
+    admin = await users.create_initial_admin(session)
+    assert admin.is_admin and admin.username == "chef"
+    await session.commit()
+    # Not again once there are users, e.g. after the admin was deleted and others were added.
+    assert await users.create_initial_admin(session) is None
+
+
 def test_login_throttle_window():
     now = [0.0]
     throttle = LoginThrottle(max_failures=2, window_seconds=60, clock=lambda: now[0])

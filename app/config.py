@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     preview_days: int = 14
     # Off in tests, so no background job touches the test database.
     run_scheduler: bool = True
+    # Optional first Flursprecher, created on startup while there are no users at all.
+    admin_username: str = ""
+    admin_password: str = ""
+    admin_name: str = ""
+    admin_room: str = ""
 
     @field_validator("secret_key")
     @classmethod
