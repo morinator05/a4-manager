@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Verlauf</h1>
+<p class="muted">Wer welchen Dienst als erledigt eingetragen hat, {{ since.strftime("%d.%m.%Y") }} bis {{ until.strftime("%d.%m.%Y") }}.</p>
+
+<form method="get" action="/history" class="row">
+  <label>Bis Datum <input type="date" name="until" value="{{ until }}" max="{{ today }}"></label>
+  <button class="secondary">Anzeigen</button>
+</form>
+
+{% for duty in Duty %}
+<h2>{{ duty.label }}</h2>
+<div class="table-wrap"><table>
+  <tr><th>Datum</th><th>Eingeteilt</th><th>Erledigt von</th>{% if user.is_admin %}<th></th>{% endif %}</tr>
+  {% for slot in slots if slot.duty == duty %}
+    {% set claimed = slot.assignments|selectattr("status", "equalto", Status.done)|first %}
+    {% set disputed = slot.assignments|selectattr("disputed_at")|first %}
+    <tr>
+      <td>{{ slot.start_date|weekday }} {{ slot.start_date|short_date }}{% if slot.end_date != slot.start_date %}–{{ slot.end_date|short_date }}{% endif %}
+          {% if slot.is_penalty %}<span class="penalty">(Strafe)</span>{% endif %}</td>
+      <td>
+        {% for a in slot.assignments %}
+          <div class="assignee"><span>{{ person(a.user) }}</span> {% include "partials/status.html" %}</div>
+        {% else %}<span class="muted">–</span>{% endfor %}
+      </td>
+      <td>
+        {% set c = claimed or disputed %}
+        {% if c %}
+          <strong>{{ person(c.user) }}</strong>
+          <div class="muted">eingetragen {{ c.completed_at|date_time }}
+            {% if c.completed_by and c.completed_by_id != c.user_id %}durch {{ person(c.completed_by) }}{% endif %}</div>
+          {% if c.disputed_at %}<div class="penalty">beanstandet {{ c.disputed_at|date_time }}</div>{% endif %}
+        {% else %}<span class="muted">niemand</span>{% endif %}
+      </td>
+      {% if user.is_admin %}
+        <td>
+          {% if claimed %}
+            <form method="post" action="/admin/assignments/{{ claimed.id }}/dispute?next={{ ('/history?until=' ~ until)|urlencode }}" class="inline"
+                  hx-confirm="{{ claimed.user.display_name if claimed.user else 'ehemalig' }} hat eingetragen, aber nicht geputzt? Gibt einen Strike.">
+              <button class="danger">Beanstanden</button>
+            </form>
+          {% endif %}
+        </td>
+      {% endif %}
+    </tr>
+  {% else %}
+    <tr><td class="muted">Keine Dienste in diesem Zeitraum.</td></tr>
+  {% endfor %}
+</table></div>
+{% endfor %}
+
+<p>
+  <a href="/history?until={{ older }}">Ältere</a>
+  {% if newer %} · <a href="/history?until={{ newer }}">Neuere</a>{% endif %}
+</p>
+{% endblock %}

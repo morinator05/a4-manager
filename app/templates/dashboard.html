@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ today|weekday }}, {{ today.strftime("%d.%m.%Y") }}</h1>
+<div class="grid">
+  {% with slot=kitchen.slot, duty=kitchen.duty, deadline=kitchen.deadline, can_mark=kitchen.can_mark %}
+    {% include "partials/duty_card.html" %}
+  {% endwith %}
+  {% with slot=trash.slot, duty=trash.duty, deadline=trash.deadline, can_mark=trash.can_mark %}
+    {% include "partials/duty_card.html" %}
+  {% endwith %}
+</div>
+{% if not user %}<p class="muted"><a href="/login">Anmelden</a>, um Dienste abzuhaken.</p>{% endif %}
+
+<div class="grid">
+  <section>
+    <h2>Küchendienst – Vorschau</h2>
+    <div class="table-wrap"><table>
+      {% for e in kitchen_preview %}
+        <tr>
+          <td>{{ e.start|weekday }} {{ e.start|short_date }}</td>
+          <td>{% for uid in e.user_ids %}{{ person(users_by_id[uid]) }}{% if not loop.last %}, {% endif %}{% else %}<span class="muted">–</span>{% endfor %}</td>
+        </tr>
+      {% endfor %}
+    </table></div>
+  </section>
+  <section>
+    <h2>Mülldienst – Vorschau</h2>
+    <div class="table-wrap"><table>
+      {% for e in trash_preview %}
+        <tr>
+          <td>{{ e.start|short_date }}–{{ e.end|short_date }}</td>
+          <td>{% for uid in e.user_ids %}{{ person(users_by_id[uid]) }}{% else %}<span class="muted">–</span>{% endfor %}
+              {% if e.is_penalty %}<span class="penalty">(Strafdienst)</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+    </table></div>
+    <p class="muted">Die Vorschau ändert sich, wenn jemand einen Dienst verpasst oder sich abwesend meldet.</p>
+  </section>
+</div>
+{% endblock %}

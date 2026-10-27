@@ -1,0 +1,37 @@
+{# One duty card on the dashboard. Expects: slot (or None), duty, deadline, can_mark(assignment).
+   Also returned alone by the "Erledigt" button, which swaps the card via htmx. #}
+<section class="card" id="card-{{ duty.value }}">
+  <h2>
+    {{ duty.label }}
+    <span class="muted">
+      {% if duty == Duty.kitchen %}heute{% elif slot %}{{ slot.start_date|short_date }}–{{ slot.end_date|short_date }}{% endif %}
+    </span>
+  </h2>
+  {% if slot and slot.is_penalty %}<p class="penalty">Strafdienst ({{ strike_threshold }} Strikes)</p>{% endif %}
+  {% if not slot or not slot.assignments %}
+    <p class="muted">Niemand eingeteilt.</p>
+  {% else %}
+    {% for a in slot.assignments %}
+      <div class="person">
+        <div>
+          <div class="name">{{ person(a.user) }}</div>
+        </div>
+        {% if can_mark(a) %}
+          <button hx-post="/assignments/{{ a.id }}/done?card=1"
+                  hx-target="#card-{{ duty.value }}" hx-swap="outerHTML">Erledigt</button>
+        {% else %}
+          {% include "partials/status.html" %}
+        {% endif %}
+      </div>
+    {% endfor %}
+    {% set claimed = slot.assignments|selectattr("status", "equalto", Status.done)|first %}
+    {% if claimed %}
+      <p class="muted">Erledigt von {{ person(claimed.user) }}
+        am {{ claimed.completed_at|date_time }}</p>
+    {% elif slot.assignments|length > 1 %}
+      <p class="muted">Einer von euch macht es. Wer es erledigt hat, trägt sich bis {{ deadline|date_time }} ein.</p>
+    {% else %}
+      <p class="muted">Eintragen bis {{ deadline|date_time }}</p>
+    {% endif %}
+  {% endif %}
+</section>
