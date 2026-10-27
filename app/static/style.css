@@ -1,11 +1,19 @@
 :root {
-  --bg: #f6f7f9; --card: #fff; --text: #1d2330; --muted: #677085; --border: #dfe3ea;
-  --accent: #2f6fdf; --ok: #1f8a4c; --warn: #b7791f; --bad: #c53030;
+  /* Pastel blue theme. Every colour has a "-soft" variant used as a background tint. */
+  --bg: #eef4fb; --card: #fbfdff; --text: #1f2e45; --muted: #607590; --border: #d3e1f1;
+  --accent: #3f73b8; --accent-soft: #d3e5f9; --accent-strong: #1f4f8f; --accent-line: #a9c8ec;
+  --ok: #2b7a4b; --ok-soft: #dcf1e4; --warn: #8f6212; --warn-soft: #fbf0d6;
+  --bad: #b03a3a; --bad-soft: #fbe3e3; --neutral: #5d6b80; --neutral-soft: #e6ecf4;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #14171d; --card: #1d2129; --text: #e6e9ef; --muted: #98a1b3; --border: #2e3440;
-          --accent: #6c9cf0; color-scheme: dark; }
+  :root {
+    --bg: #121a26; --card: #1a2433; --text: #e2ebf7; --muted: #93a6bf; --border: #2b3a50;
+    --accent: #9cc4f2; --accent-soft: #284466; --accent-strong: #d6e7fb; --accent-line: #3c5f8a;
+    --ok: #9adbb3; --ok-soft: #1e3a2c; --warn: #f0cf8c; --warn-soft: #3c3220;
+    --bad: #f2a7a7; --bad-soft: #432427; --neutral: #a9b6c8; --neutral-soft: #253244;
+    color-scheme: dark;
+  }
 }
 * { box-sizing: border-box; }
 body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--text); }
@@ -26,16 +34,25 @@ h2 { font-size: 1.15rem; margin: 1.5rem 0 .5rem; }
           padding: .5rem 0; border-top: 1px solid var(--border); }
 .person:first-of-type { border-top: 0; }
 .name { font-weight: 600; font-size: 1.1rem; }
+.assignee { display: flex; justify-content: space-between; align-items: center; gap: .75rem;
+            padding: .15rem 0; }
 .muted { color: var(--muted); font-size: .9em; }
-.badge { display: inline-block; padding: .1rem .5rem; border-radius: 99px; font-size: .8rem;
-         border: 1px solid currentColor; white-space: nowrap; }
-.s-done { color: var(--ok); } .s-pending { color: var(--warn); }
-.s-missed { color: var(--bad); } .s-excused, .s-covered { color: var(--muted); }
+/* Same box as a button, so status and button line up next to each other. */
+.badge { display: inline-block; padding: .2rem .6rem; border-radius: 6px; font: inherit; font-size: .9em;
+         border: 1px solid transparent; white-space: nowrap; text-align: center;
+         color: var(--neutral); background: var(--neutral-soft); }
+.s-done { color: var(--ok); background: var(--ok-soft); }
+.s-pending { color: var(--warn); background: var(--warn-soft); }
+.s-missed { color: var(--bad); background: var(--bad-soft); }
+.s-excused, .s-covered { color: var(--neutral); background: var(--neutral-soft); }
+/* Equal width for the status tags and the "Erledigt" button in a list of people. */
+.person .badge, .person button, .assignee .badge { min-width: 7.5em; }
 .penalty { color: var(--bad); font-weight: 600; }
-button, .button { font: inherit; padding: .35rem .8rem; border-radius: 6px; cursor: pointer;
-         border: 1px solid var(--accent); background: var(--accent); color: #fff; }
+button, .button { font: inherit; font-size: .9em; padding: .2rem .6rem; border-radius: 6px; cursor: pointer;
+         border: 1px solid var(--accent-line); background: var(--accent-soft); color: var(--accent-strong); }
+button:hover { filter: brightness(.95); }
 button.secondary { background: transparent; color: var(--accent); }
-button.danger { background: transparent; color: var(--bad); border-color: var(--bad); }
+button.danger { background: var(--bad-soft); color: var(--bad); border-color: var(--bad); }
 button.link { background: none; border: 0; padding: 0; color: var(--text); }
 input, select { font: inherit; padding: .35rem .5rem; border: 1px solid var(--border);
          border-radius: 6px; background: var(--bg); color: var(--text); max-width: 100%; }

@@ -8,17 +8,19 @@
   <button class="secondary">Anzeigen</button>
 </form>
 
+{% for duty in Duty %}
+<h2>{{ duty.label }}</h2>
 <div class="table-wrap"><table>
-  <tr><th>Datum</th><th>Dienst</th><th>Eingeteilt</th><th>Erledigt von</th>{% if user.is_admin %}<th></th>{% endif %}</tr>
-  {% for slot in slots %}
+  <tr><th>Datum</th><th>Eingeteilt</th><th>Erledigt von</th>{% if user.is_admin %}<th></th>{% endif %}</tr>
+  {% for slot in slots if slot.duty == duty %}
     {% set claimed = slot.assignments|selectattr("status", "equalto", Status.done)|first %}
     {% set disputed = slot.assignments|selectattr("disputed_at")|first %}
     <tr>
-      <td>{{ slot.start_date|weekday }} {{ slot.start_date|short_date }}{% if slot.end_date != slot.start_date %}–{{ slot.end_date|short_date }}{% endif %}</td>
-      <td>{{ slot.duty.label }}{% if slot.is_penalty %} <span class="penalty">(Strafe)</span>{% endif %}</td>
+      <td>{{ slot.start_date|weekday }} {{ slot.start_date|short_date }}{% if slot.end_date != slot.start_date %}–{{ slot.end_date|short_date }}{% endif %}
+          {% if slot.is_penalty %}<span class="penalty">(Strafe)</span>{% endif %}</td>
       <td>
         {% for a in slot.assignments %}
-          <div>{{ a.user.display_name if a.user else "ehemalig" }} {% include "partials/status.html" %}</div>
+          <div class="assignee">{{ a.user.display_name if a.user else "ehemalig" }} {% include "partials/status.html" %}</div>
         {% else %}<span class="muted">–</span>{% endfor %}
       </td>
       <td>
@@ -45,6 +47,7 @@
     <tr><td class="muted">Keine Dienste in diesem Zeitraum.</td></tr>
   {% endfor %}
 </table></div>
+{% endfor %}
 
 <p>
   <a href="/history?until={{ older }}">Ältere</a>
