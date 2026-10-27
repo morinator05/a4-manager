@@ -20,7 +20,9 @@
       <td>{{ counts.get((u.id, Duty.trash, Status.done), 0) }}</td>
       <td>{{ "%.2f"|format(tb.debt|float) if tb else "0.00" }}</td>
       <td>{{ counts.get((u.id, Duty.trash, "penalty"), 0) }}</td>
-      <td>{{ active[u.id] }} / {{ strike_threshold }}</td>
+      {# Green without strikes, red one strike before the penalty week, orange in between. #}
+      {% set n = active[u.id] %}
+      <td class="strikes {{ 'ok' if n == 0 else ('bad' if n >= strike_threshold - 1 else 'warn') }}">{{ n }} / {{ strike_threshold }}</td>
     </tr>
   {% endfor %}
 </table></div>

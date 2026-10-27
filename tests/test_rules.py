@@ -444,3 +444,15 @@ async def test_own_name_is_highlighted(session, client):
     text = (await client.get("/stats")).text
     assert str(person_html(people[1], is_me=True)) in text
     assert str(person_html(people[0])) in text
+
+
+async def test_stats_colour_strikes(session, client):
+    people = await make_users(session, n=3)
+    await strikes.issue(session, user_id=people[1].id, reason="x", today=MONDAY)
+    for _ in range(2):
+        await strikes.issue(session, user_id=people[2].id, reason="x", today=MONDAY)
+    await session.commit()
+    text = (await client.get("/stats")).text
+    assert '"strikes ok">0 / 3' in text
+    assert '"strikes warn">1 / 3' in text
+    assert '"strikes bad">2 / 3' in text

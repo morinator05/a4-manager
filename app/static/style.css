@@ -6,7 +6,7 @@
   --nav-bg: #d6e6f8; --nav-hover: #c3d9f3;
   --accent: #2f66b0; --accent-soft: #cfe1f7; --accent-strong: #173f73; --accent-line: #8fb3e2;
   --ok: #22703f; --ok-soft: #d9f2e2; --ok-line: #9fd4b3;
-  --warn: #84570b; --warn-soft: #fcefd2; --warn-line: #ebcb86;
+  --warn: #b45309; --warn-soft: #fcefd2; --warn-line: #ebcb86;
   --bad: #a83232; --bad-soft: #fbe1e1; --bad-line: #eba9a9;
   --neutral: #56657c; --neutral-soft: #e7edf5; --neutral-line: #c4cfde;
   --room: #4a5b74; --room-soft: #dfe7f2;
@@ -20,7 +20,7 @@
     --nav-bg: #1d2d44; --nav-hover: #284066;
     --accent: #9cc4f2; --accent-soft: #284466; --accent-strong: #dbe9fb; --accent-line: #4a72a3;
     --ok: #9adbb3; --ok-soft: #1c3a2a; --ok-line: #3a6b4e;
-    --warn: #f0cf8c; --warn-soft: #3a311e; --warn-line: #6e5a2e;
+    --warn: #ffb066; --warn-soft: #3a2a1a; --warn-line: #7a5230;
     --bad: #f2a7a7; --bad-soft: #432427; --bad-line: #7a3f44;
     --neutral: #a9b6c8; --neutral-soft: #253244; --neutral-line: #3d4d64;
     --room: #b3c2d6; --room-soft: #2a3648;
@@ -51,6 +51,8 @@ nav .nav-user { color: var(--muted); font-size: .9em; margin-left: auto; padding
 .card h2 { margin-top: 0; }
 .muted { color: var(--muted); font-size: .9em; }
 .penalty { color: var(--bad); font-weight: 600; }
+.strikes { font-weight: 600; }
+.strikes.ok { color: var(--ok); } .strikes.warn { color: var(--warn); } .strikes.bad { color: var(--bad); }
 
 /* People: the name comes first, the room is a smaller, quieter tag after it. */
 .person-name { font-weight: 600; }
