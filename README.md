@@ -59,6 +59,7 @@ Test residents: `uv run python scripts/seed.py`.
 
 ```bash
 uv run pytest   # needs the database from `docker compose up -d db`
+uv run ruff check . && uv run ruff format --check .   # lint, as in CI
 ```
 
 ## Code

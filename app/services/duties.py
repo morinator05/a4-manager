@@ -395,9 +395,7 @@ async def preview(session: AsyncSession, duty: Duty, start: date, end: date) -> 
 
     # plan() returns one list of user ids per `todo` slot, in the same order.
     planned = iter(
-        scheduling.plan(
-            await load_balances(session, duty), await load_candidates(session), todo, n
-        )
+        scheduling.plan(await load_balances(session, duty), await load_candidates(session), todo, n)
     )
     for e in entries:
         if (e.start, e.end) in todo:

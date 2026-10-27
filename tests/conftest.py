@@ -39,6 +39,8 @@ async def session_factory(monkeypatch):
             await conn.run_sync(Base.metadata.drop_all)
             await conn.run_sync(Base.metadata.create_all)
     except OSError:
+        if os.environ.get("CI"):  # in CI a missing database is an error, not a skip
+            raise
         pytest.skip("test database not reachable (docker compose up -d db)")
     factory = async_sessionmaker(engine, expire_on_commit=False)
     monkeypatch.setattr(db, "SessionLocal", factory)

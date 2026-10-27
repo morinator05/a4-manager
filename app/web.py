@@ -59,8 +59,8 @@ templates.env.globals["Status"] = Status
 templates.env.globals["strike_threshold"] = settings.strike_threshold
 templates.env.globals["min_password_length"] = auth.MIN_PASSWORD_LENGTH
 templates.env.filters["short_date"] = lambda d: f"{d:%d.%m.}" if d else ""
-templates.env.filters["date_time"] = (
-    lambda d: f"{d.astimezone(settings.tz):%d.%m.%Y %H:%M}" if d else ""
+templates.env.filters["date_time"] = lambda d: (
+    f"{d.astimezone(settings.tz):%d.%m.%Y %H:%M}" if d else ""
 )
 templates.env.filters["weekday"] = lambda d: ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"][d.weekday()]
 

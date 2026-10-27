@@ -19,7 +19,11 @@ async def main() -> None:
     async with SessionLocal() as session:
         try:
             user = await users.create(
-                session, name=name, room_number=room, username=username, password=password,
+                session,
+                name=name,
+                room_number=room,
+                username=username,
+                password=password,
                 is_admin=True,
             )
         except users.UserError as e:

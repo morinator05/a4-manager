@@ -3,6 +3,7 @@
 import random
 from collections import Counter
 from datetime import date, timedelta
+from itertools import pairwise
 
 import pytest
 
@@ -31,7 +32,7 @@ def test_counts_stay_within_one(n_people):
 
 def test_no_double_duty_on_consecutive_days():
     result = plan({}, people(15), days(60), 2)
-    for today, tomorrow in zip(result, result[1:]):
+    for today, tomorrow in pairwise(result):
         assert not set(today) & set(tomorrow)
 
 
@@ -42,7 +43,7 @@ def test_away_people_are_skipped_and_not_charged():
     result = plan({}, cands, days(180), 2)
 
     away_days = {d for d, _ in days(180) if away_start <= d <= away_end}
-    for (d, _), picked in zip(days(180), result):
+    for (d, _), picked in zip(days(180), result, strict=True):
         if d in away_days:
             assert 1 not in picked
 
