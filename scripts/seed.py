@@ -21,6 +21,7 @@ from app.db import SessionLocal  # noqa: E402
 from app.models import User  # noqa: E402
 from app.services import jobs, users  # noqa: E402
 
+# fmt: off
 FIRST_NAMES = [
     "Anna", "Ben", "Clara", "David", "Emma", "Felix", "Greta", "Hannes", "Ida", "Jonas",
     "Kim", "Lukas", "Mia", "Noah", "Olivia", "Paul", "Quinn", "Rosa", "Simon", "Tara",
@@ -30,6 +31,7 @@ LAST_NAMES = [
     "Müller", "Schmidt", "Schneider", "Fischer", "Weber", "Meyer", "Wagner", "Becker",
     "Schulz", "Hoffmann", "Koch", "Richter", "Klein", "Wolf", "Neumann", "Schwarz",
 ]
+# fmt: on
 
 
 async def main(count: int, password: str) -> None:

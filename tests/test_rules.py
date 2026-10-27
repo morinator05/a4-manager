@@ -10,12 +10,12 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.main import app
-from app.web import person_html
 from app.models import Assignment, Duty, Slot, Status
 from app.services import duties, jobs, strikes, users
 from app.services.duties import DutyError
 from app.services.login_throttle import LoginThrottle
 from app.services.users import UserError
+from app.web import person_html
 
 MONDAY = date(2026, 11, 2)
 
@@ -247,12 +247,16 @@ async def test_month_of_ticks_is_fair(session):
         await session.commit()
         day += timedelta(days=1)
     rows = (
-        await session.execute(
-            select(Assignment.user_id)
-            .join(Assignment.slot)
-            .where(Slot.duty == Duty.kitchen, Assignment.status == Status.done)
+        (
+            await session.execute(
+                select(Assignment.user_id)
+                .join(Assignment.slot)
+                .where(Slot.duty == Duty.kitchen, Assignment.status == Status.done)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     counts = [rows.count(u) for u in set(rows)]
     assert len(set(rows)) == 15 and max(counts) - min(counts) <= 1
 
@@ -355,9 +359,7 @@ async def test_web_errors_do_not_break_the_page(session, client):
 
     # Clicking someone else's card button reloads the page instead of nesting it in the card.
     await login(client, outsider.username)
-    r = await client.post(
-        f"/assignments/{first.id}/done?card=1", headers={"HX-Request": "true"}
-    )
+    r = await client.post(f"/assignments/{first.id}/done?card=1", headers={"HX-Request": "true"})
     assert r.status_code == 200 and r.headers["HX-Refresh"] == "true"
 
     await client.post("/logout")

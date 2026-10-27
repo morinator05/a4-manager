@@ -24,9 +24,7 @@ async def daily_tick(session: AsyncSession, now: datetime) -> None:
     from the Flursprecher page, and from the dashboard if today's slots are missing.
     """
     # Serialize ticks (scheduler, startup and page loads may race).
-    await session.execute(
-        text("SELECT pg_advisory_xact_lock(:id)"), {"id": DAILY_TICK_LOCK_ID}
-    )
+    await session.execute(text("SELECT pg_advisory_xact_lock(:id)"), {"id": DAILY_TICK_LOCK_ID})
     missed = await duties.process_overdue(session, now)
     await duties.materialize(session, Duty.kitchen, now.date())
     await duties.materialize(session, Duty.trash, now.date())
