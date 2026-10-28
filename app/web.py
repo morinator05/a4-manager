@@ -60,14 +60,19 @@ def role(context, r: Role) -> Markup:
     """A preview stand-in: "Erledigt" (whoever cleans) or "Ausgelassen" (whoever doesn't).
 
     For an earlier slot that is still open (yesterday's before the deadline), its date
-    follows. Highlighted for the slot's own people.
+    follows. Green with a tick if done, amber with a cross if not; ringed for the slot's
+    own people.
     """
     text = "Erledigt" if r.did_it else "Ausgelassen"
     if r.start != context.get("today"):
         text += f" {r.start:%d.%m.}"
+    css = "role role-done" if r.did_it else "role role-skip"
     viewer = context.get("user")
-    css = "role me" if viewer is not None and viewer.id in r.members else "role"
-    return Markup('<span class="{}">{}</span>').format(css, text)
+    if viewer is not None and viewer.id in r.members:
+        css += " me"
+    return Markup('<span class="{}"><span aria-hidden="true">{}</span> {}</span>').format(
+        css, "✓" if r.did_it else "✗", text
+    )
 
 
 templates.env.globals["person"] = person

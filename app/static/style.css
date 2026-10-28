@@ -11,7 +11,6 @@
   --neutral: #56657c; --neutral-soft: #e7edf5; --neutral-line: #c4cfde;
   --room: #4a5b74; --room-soft: #dfe7f2;
   --me: #6b46c1; --me-room: #ebe3fb;
-  --role: #0b6577; --role-soft: #d3eff4;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -26,7 +25,6 @@
     --neutral: #a9b6c8; --neutral-soft: #253244; --neutral-line: #3d4d64;
     --room: #b3c2d6; --room-soft: #2a3648;
     --me: #c4b1f6; --me-room: #382d57;
-    --role: #8fdbe8; --role-soft: #163a43;
     color-scheme: dark;
   }
 }
@@ -71,11 +69,20 @@ main > .card + .card { margin-top: 1rem; }
 /* The logged-in user's own name, so you spot yourself at a glance. */
 .me { color: var(--me); }
 .me .room { color: var(--me); background: var(--me-room); }
-/* Preview stand-in for today's pair ("Erledigt" / "Ausgelassen"), not a name: set like a
-   name, on a fill in its own colour so it stands out; purple for the pair themselves. */
-.role { font-weight: 600; padding: 0 .35em; white-space: nowrap;
-        color: var(--role); background: var(--role-soft); }
-.role.me { color: var(--me); background: var(--me-room); }
+/* Preview stand-in for today's pair, not a name: a framed tag in the outcome's colour,
+   green "✓ Erledigt" and amber "✗ Ausgelassen"; ringed in purple for the pair themselves.
+   Its row gets a bar in the same colour, so you find the date at a glance. */
+.role { display: inline-block; font-weight: 600; line-height: 1.4; padding: 0 .45em;
+        white-space: nowrap; border: 1px solid; }
+.role-done { color: var(--ok); background: var(--ok-soft); border-color: var(--ok-line); }
+.role-skip { color: var(--warn); background: var(--warn-soft); border-color: var(--warn-line); }
+.role.me { outline: 2px solid var(--me); outline-offset: 1px; }
+tr:has(.role-done) > td:first-child { box-shadow: inset 4px 0 var(--ok); color: var(--ok);
+                                       font-weight: 600; }
+tr:has(.role-skip) > td:first-child { box-shadow: inset 4px 0 var(--warn); color: var(--warn);
+                                       font-weight: 600; }
+tr:has(.role-done) > td, tr:has(.role-skip) > td { background: var(--card-alt); }
+.legend .role { font-size: .95em; }
 .person { display: flex; justify-content: space-between; align-items: center; gap: .5rem;
           padding: .5rem 0; border-top: 1px solid var(--border); }
 .person:first-of-type { border-top: 0; }
