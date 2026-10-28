@@ -30,7 +30,7 @@
         <tr>
           <td>{{ e.start|short_date }}–{{ e.end|short_date }}</td>
           <td>{% for uid in e.user_ids %}{{ person(users_by_id[uid]) }}{% else %}<span class="muted">–</span>{% endfor %}
-              {% if e.is_penalty %}<span class="penalty">(Strafdienst)</span>{% endif %}</td>
+              {% if e.is_penalty %}<span class="penalty">(Straf-Mülldienst)</span>{% endif %}</td>
         </tr>
       {% endfor %}
     </table></div>

@@ -27,7 +27,7 @@ person who cleans ends at 0.07 − 1 ≈ −0.93. All debts sum to 0.
 **Strikes**
 - Given for a missed duty (everyone on it), a disputed "Erledigt", or by hand.
 - Marking a missed duty done or excusing it later revokes its strikes.
-- 3 strikes → Strafdienst: the next trash week without an assignment in which the person
+- 3 strikes → Straf-Mülldienst: the next trash week without an assignment in which the person
   isn't away. It replaces the regular trash duty, doesn't count for fairness and uses up the
   3 strikes.
 
