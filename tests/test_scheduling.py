@@ -7,7 +7,7 @@ from itertools import pairwise
 
 import pytest
 
-from app.services.scheduling import Candidate, accrue, credit, plan, room_key
+from app.services.scheduling import Candidate, Role, accrue, credit, plan, room_key
 
 START = date(2026, 1, 5)  # a Monday
 
@@ -119,3 +119,49 @@ def test_room_natural_sort():
 def test_fewer_people_than_needed():
     result = plan({}, people(1), days(3), 2)
     assert result == [[1], [1], [1]]
+
+
+def test_open_slot_people_become_roles():
+    cands = people(15)
+    balances, _, _ = run(cands, 30)
+    today = START + timedelta(days=30)
+    [pair] = plan(balances, cands, [(today, today)], 2)
+    accrue(balances, [c.id for c in cands])
+
+    result = plan(balances, cands, days(30, today + timedelta(days=1)), 2, [(today, pair)])
+    shown = [u for picked in result for u in picked]
+    assert not set(pair) & set(shown)
+    members = tuple(sorted(pair))
+    skipped, did = Role(today, False, members), Role(today, True, members)
+    # Without the credit you're up again much sooner than with it.
+    assert skipped in shown and did in shown
+    assert shown.index(skipped) < shown.index(did)
+    assert shown.count(skipped) == shown.count(did) == 1
+
+
+def test_fresh_start_non_cleaner_is_next():
+    cands = people(15)
+    balances = {}
+    accrue(balances, [c.id for c in cands])
+    result = plan(balances, cands, days(14, START + timedelta(days=1)), 2, [(START, [1, 2])])
+    assert Role(START, False, (1, 2)) in result[0]
+    # The one who cleans owes the least, so they're not up again within two weeks.
+    assert all(Role(START, True, (1, 2)) not in picked for picked in result)
+
+
+def test_being_picked_without_cleaning_does_not_move_you_back():
+    cands = people(4)
+    balances = {}
+    for _ in range(2):
+        accrue(balances, [c.id for c in cands])
+    # Day 1: 1 and 2 on duty, 1 cleans. Day 2: 3 and 4, 3 cleans.
+    credit(balances, 1, START)
+    credit(balances, 3, START + timedelta(days=1))
+    # 2 and 4 owe the same; 2 wasn't pushed back by being on duty first.
+    [picked] = plan(balances, cands, days(1, START + timedelta(days=2)), 1)
+    assert picked == [2]
+
+
+def test_open_slot_with_one_person_is_kept():
+    result = plan({}, people(3), days(2), 1, [(START, [1])])
+    assert all(isinstance(u, int) for picked in result for u in picked)

@@ -14,6 +14,7 @@ from app.models import Assignment, Duty, Slot, Status
 from app.services import duties, jobs, strikes, users
 from app.services.duties import DutyError
 from app.services.login_throttle import LoginThrottle
+from app.services.scheduling import Role
 from app.services.users import UserError
 from app.web import person_html
 
@@ -171,6 +172,39 @@ async def test_open_slot_is_shared_for_picking_but_not_for_debt(session):
     # Tomorrow is picked before anyone marked today done; today's pair isn't picked again.
     tomorrow = await duties.materialize(session, Duty.kitchen, MONDAY + timedelta(days=1))
     assert {a.user_id for a in tomorrow.assignments}.isdisjoint({p1.id, p2.id})
+
+
+async def test_preview_shows_open_pair_as_roles(session):
+    people = await make_users(session)
+    _, first, _, p1, p2 = await kitchen_pair(session, people)
+
+    async def shown():
+        preview = await duties.preview(
+            session, Duty.kitchen, MONDAY + timedelta(days=1), MONDAY + timedelta(days=30)
+        )
+        return [u for e in preview for u in e.user_ids]
+
+    members = tuple(sorted([p1.id, p2.id]))
+    before = await shown()
+    # Whoever doesn't clean is up again tomorrow; whoever does, much later.
+    assert before[:2].count(Role(MONDAY, False, members)) == 1
+    assert Role(MONDAY, True, members) in before
+    assert p1.id not in before and p2.id not in before
+
+    # Once it's done, the outcome is known and the names are back.
+    await duties.mark_done(session, first, p1, at(MONDAY, 20))
+    after = await shown()
+    assert not any(isinstance(u, Role) for u in after)
+    assert p2.id in after
+
+
+async def test_partner_who_did_not_clean_is_picked_next(session):
+    people = await make_users(session)
+    _, first, _, p1, p2 = await kitchen_pair(session, people)
+    await duties.mark_done(session, first, p1, at(MONDAY, 20))
+    tomorrow = await duties.materialize(session, Duty.kitchen, MONDAY + timedelta(days=1))
+    ids = {a.user_id for a in tomorrow.assignments}
+    assert p2.id in ids and p1.id not in ids
 
 
 async def test_dispute_gives_strike_and_removes_credit(session):

@@ -5,6 +5,7 @@ Routes only parse input, call a service and render or redirect; the rules live i
 doesn't submit the form again.
 """
 
+from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Annotated
@@ -24,6 +25,7 @@ from app.models import Assignment, AwayPeriod, Duty, Slot, Status, Strike, User
 from app.services import auth, duties, jobs, strikes, users
 from app.services.duties import DutyError
 from app.services.login_throttle import login_throttle
+from app.services.scheduling import Role
 from app.services.users import UserError
 
 router = APIRouter()
@@ -53,7 +55,24 @@ def person(context, user: User | None) -> Markup:
     return person_html(user, is_me)
 
 
+@pass_context
+def role(context, r: Role) -> Markup:
+    """A preview stand-in: "Erledigt" (whoever cleans) or "Ausgelassen" (whoever doesn't).
+
+    For an earlier slot that is still open (yesterday's before the deadline), its date
+    follows. Highlighted for the slot's own people.
+    """
+    text = "Erledigt" if r.did_it else "Ausgelassen"
+    if r.start != context.get("today"):
+        text += f" {r.start:%d.%m.}"
+    viewer = context.get("user")
+    css = "role me" if viewer is not None and viewer.id in r.members else "role"
+    return Markup('<span class="{}">{}</span>').format(css, text)
+
+
 templates.env.globals["person"] = person
+templates.env.globals["role"] = role
+templates.env.tests["role"] = lambda x: isinstance(x, Role)
 templates.env.globals["Duty"] = Duty
 templates.env.globals["Status"] = Status
 templates.env.globals["strike_threshold"] = settings.strike_threshold
@@ -170,13 +189,23 @@ async def dashboard(request: Request, session: Session, user: OptionalUser):
 
     tomorrow = today + timedelta(days=1)
     horizon = today + timedelta(days=settings.preview_days)
+    kitchen_preview = await duties.preview(session, Duty.kitchen, tomorrow, horizon)
+    shown = [u for e in kitchen_preview for u in e.user_ids if isinstance(u, Role)]
+    # Whoever does today's duty is usually up only after the plan ends; say so below it.
+    later = [
+        r
+        for r in dict.fromkeys(replace(u, did_it=True) for u in shown if not u.did_it)
+        if r not in shown
+    ]
     return render(
         request,
         "dashboard.html",
         user,
         kitchen=duty_card_ctx(kitchen, Duty.kitchen, user),
         trash=duty_card_ctx(trash, Duty.trash, user),
-        kitchen_preview=await duties.preview(session, Duty.kitchen, tomorrow, horizon),
+        kitchen_preview=kitchen_preview,
+        kitchen_has_roles=bool(shown),
+        kitchen_later=later,
         trash_preview=await duties.preview(session, Duty.trash, tomorrow, horizon),
         users_by_id=await users_by_id(session),
     )
