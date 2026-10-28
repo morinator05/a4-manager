@@ -103,7 +103,8 @@ docker compose exec app uv run --no-dev python scripts/create_admin.py   # first
 - **Server:** set a random `POSTGRES_PASSWORD` before the first start (later changes need
   `ALTER USER a4 PASSWORD '...'` in the database).
 - **Update:** `docker compose up -d --build`. Migrations run on every start.
-- **Test residents:** `docker compose exec app uv run --no-dev python scripts/seed.py`.
+- **Test residents:** `docker compose exec app uv run --no-dev python scripts/seed.py`. Add
+  `--days 30` (on an empty database) for a simulated month of duties, misses and strikes.
 - **Reset:** `docker compose down -v` deletes the database.
 
 Development with auto-reload (database in Docker, app local):
