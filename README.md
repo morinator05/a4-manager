@@ -44,6 +44,17 @@ week's people. The Verwaltung page can run it by hand.
 
 All numbers (people per slot, deadline, strike limit) are settings in `.env`, see `.env.example`.
 
+## Tech stack
+
+- **Backend:** Python 3.12, FastAPI, APScheduler for the daily job
+- **Database:** PostgreSQL 16, SQLAlchemy (async, asyncpg), Alembic migrations
+- **Frontend:** server-rendered Jinja templates, htmx for page loads without a full reload
+  and in-place updates, plain CSS. No JavaScript build step.
+- **Auth:** signed session cookie (itsdangerous), passwords hashed with Argon2 (pwdlib)
+- **Config:** pydantic-settings, read from `.env`
+- **Tooling:** uv, pytest, ruff, GitHub Actions CI
+- **Deployment:** Docker Compose (app + database)
+
 ## Setup
 
 ```bash
