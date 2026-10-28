@@ -15,7 +15,7 @@ from sqlalchemy.orm import selectinload
 from app.config import settings
 from app.models import Assignment, Duty, Slot, SlotEligible, Status, User
 from app.services import scheduling, strikes
-from app.services.scheduling import Balance, Candidate
+from app.services.scheduling import Balance, Candidate, Role
 
 
 class DutyError(Exception):
@@ -98,12 +98,10 @@ async def load_balances(session: AsyncSession, duty: Duty) -> dict[int, Balance]
         for a in slot.assignments:
             if a.user_id is None:
                 continue
-            b = balances.setdefault(a.user_id, Balance())
-            b.last_duty = (
-                slot.start_date if b.last_duty is None else max(b.last_duty, slot.start_date)
-            )
-            b.credit += slot_credit(slot, a)
-            b.pending += slot_pending(slot, a)
+            done = slot_credit(slot, a)
+            if done:
+                scheduling.credit(balances, a.user_id, slot.start_date, done)
+            balances.setdefault(a.user_id, Balance()).pending += slot_pending(slot, a)
     return balances
 
 
@@ -359,7 +357,8 @@ class PreviewEntry:
 
     start: date
     end: date
-    user_ids: list[int]
+    # User ids; `Role`s stand for the people on a slot that isn't done yet.
+    user_ids: list[int | Role]
     is_penalty: bool = False
 
 
@@ -367,7 +366,8 @@ async def preview(session: AsyncSession, duty: Duty, start: date, end: date) -> 
     """Expected schedule for the slots starting between `start` and `end`.
 
     Slots that already exist (e.g. penalty weeks) are shown as they are; the others are
-    simulated with `scheduling.plan`.
+    simulated with `scheduling.plan`. The people on earlier slots that nobody has marked
+    done yet (e.g. today's kitchen pair) show up as "did it" / "didn't do it" `Role`s.
     """
     n = people_per_slot(duty)
     step = timedelta(days=1 if duty is Duty.kitchen else 7)
@@ -399,9 +399,31 @@ async def preview(session: AsyncSession, duty: Duty, start: date, end: date) -> 
             entries.append(PreviewEntry(*bounds, []))
         day += step
 
+    earlier = await session.scalars(
+        select(Slot)
+        .where(
+            Slot.duty == duty,
+            Slot.is_penalty.is_(False),
+            Slot.start_date < first,
+            Slot.assignments.any(Assignment.status == Status.pending),
+        )
+        .options(selectinload(Slot.assignments))
+    )
+    open_slots = [
+        (s.start_date, [a.user_id for a in s.assignments if a.status is Status.pending])
+        for s in earlier
+        if not any(a.status is Status.done for a in s.assignments)
+    ]
+
     # plan() returns one list of user ids per `todo` slot, in the same order.
     planned = iter(
-        scheduling.plan(await load_balances(session, duty), await load_candidates(session), todo, n)
+        scheduling.plan(
+            await load_balances(session, duty),
+            await load_candidates(session),
+            todo,
+            n,
+            open_slots,
+        )
     )
     for e in entries:
         if (e.start, e.end) in todo:

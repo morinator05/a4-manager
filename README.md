@@ -16,9 +16,10 @@ tracks who did it and gives strikes for missed duties. The UI is in German.
 **Fairness**
 
 Each slot is one job, split equally among everyone available (active, not away). Debt
-("Schuld") = shares − jobs done. The highest debt is picked next; ties go to whoever's last
-duty is longest ago. Example with 15 residents: a slot adds 1/15 ≈ 0.07 to everyone, the
-person who cleans ends at 0.07 − 1 ≈ −0.93. All debts sum to 0.
+("Schuld") = shares − jobs done. The highest debt is picked next; ties go to whoever cleaned
+longest ago (never cleaned = first). Being put on a duty without cleaning doesn't move you
+back. Example with 15 residents: a slot adds 1/15 ≈ 0.07 to everyone, the person who cleans
+ends at 0.07 − 1 ≈ −0.93. All debts sum to 0.
 - Away or paused: no share for that time.
 - New residents start at 0.
 - Only the person who cleaned gets credit. Missed duties give no credit.
@@ -53,7 +54,7 @@ deleted) are replaced on their open duties immediately.
 
 | Page | Access | Content |
 |---|---|---|
-| Übersicht | public | Today's duties, plan for the next 14 days |
+| Übersicht | public | Today's duties, plan for the next 14 days. Today's kitchen pair is shown as "Erledigt" / "Ausgelassen": where they land if they clean or don't |
 | Statistik | public | Per resident: done, missed, debt, strikes |
 | Verlauf | login | Duty history, 4 weeks per page |
 | Mein Profil | login | Absences, strikes, recent duties, password |

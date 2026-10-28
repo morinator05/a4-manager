@@ -18,10 +18,17 @@
       {% for e in kitchen_preview %}
         <tr>
           <td>{{ e.start|weekday }} {{ e.start|short_date }}</td>
-          <td>{% for uid in e.user_ids %}{{ person(users_by_id[uid]) }}{% if not loop.last %}, {% endif %}{% else %}<span class="muted">–</span>{% endfor %}</td>
+          <td>{% for uid in e.user_ids %}{% if uid is role %}{{ role(uid) }}{% else %}{{ person(users_by_id[uid]) }}{% endif %}{% if not loop.last %}, {% endif %}{% else %}<span class="muted">–</span>{% endfor %}</td>
+        </tr>
+      {% endfor %}
+      {% for r in kitchen_later %}
+        <tr>
+          <td class="muted">später</td>
+          <td>{{ role(r) }} <span class="muted">(erst nach dem {{ kitchen_preview[-1].start|short_date }})</span></td>
         </tr>
       {% endfor %}
     </table></div>
+    {% if kitchen_has_roles %}<p class="muted legend">Heute dran? <span class="role role-done"><span aria-hidden="true">✓</span> Erledigt</span> und <span class="role role-skip"><span aria-hidden="true">✗</span> Ausgelassen</span> zeigen, wann du wieder dran bist, je nachdem, ob du heute putzt (wenn es bis Mitternacht abgehakt ist).</p>{% endif %}
   </section>
   <section>
     <h2>Mülldienst – Vorschau</h2>
