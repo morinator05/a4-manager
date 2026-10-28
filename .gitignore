@@ -1,5 +1,37 @@
-.venv/
+# Python
 __pycache__/
-*.pyc
-.env
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Virtual environment (uv)
+.venv/
+
+# Tests, coverage and linters
 .pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Secrets: only the example is committed
+.env
+.env.*
+!.env.example
+
+# VS Code: share project settings, recommended extensions and debug configs,
+# but not personal state
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+.history/
+*.vsix
+*.code-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
