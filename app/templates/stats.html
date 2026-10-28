@@ -7,7 +7,7 @@
   <tr>
     <th>Name</th>
     <th>Küche erledigt</th><th>Küche verpasst</th><th>Küche Schuld</th>
-    <th>Müll erledigt</th><th>Müll Schuld</th><th>Strafdienste</th><th>Strikes</th>
+    <th>Müll erledigt</th><th>Müll Schuld</th><th>Straf-Mülldienste</th><th>Strikes</th>
   </tr>
   {% for u in users %}
     {% set kb = balances[Duty.kitchen].get(u.id) %}

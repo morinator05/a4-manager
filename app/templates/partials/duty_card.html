@@ -7,7 +7,7 @@
       {% if duty == Duty.kitchen %}heute{% elif slot %}{{ slot.start_date|short_date }}–{{ slot.end_date|short_date }}{% endif %}
     </span>
   </h2>
-  {% if slot and slot.is_penalty %}<p class="penalty">Strafdienst ({{ strike_threshold }} Strikes)</p>{% endif %}
+  {% if slot and slot.is_penalty %}<p class="penalty">Straf-Mülldienst ({{ strike_threshold }} Strikes)</p>{% endif %}
   {% if not slot or not slot.assignments %}
     <p class="muted">Niemand eingeteilt.</p>
   {% else %}
