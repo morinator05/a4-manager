@@ -40,7 +40,8 @@ it are reassigned immediately. Deleting the absence doesn't give them back.
   Flursprecher role.
 - Mark any duty done (also after the deadline), excuse it ("Entschuldigen": no strike, no
   credit) or dispute it ("Beanstanden", also on "Verlauf": the claimer loses the credit and
-  gets a strike).
+  gets a strike). "Zurücknehmen" undoes a dispute completely: done again, the strike is
+  deleted, and a penalty week it led to is dropped (not once that week is over).
 - Give and revoke strikes; run the daily job by hand.
 - Move-out/in: delete the old resident and add the new one as a new account (don't rename).
   The history stays as "ehemalig"; nobody inherits the share.

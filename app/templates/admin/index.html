@@ -109,6 +109,11 @@
                     hx-confirm="Eingetragen, aber nicht gemacht? Gibt einen Strike.">
                 <button class="danger">Beanstanden</button></form>
             {% endif %}
+            {% if a.disputed_at and not slot_done %}
+              <form method="post" action="/admin/assignments/{{ a.id }}/undo-dispute?next=/admin" class="inline"
+                    hx-confirm="Beanstandung zurücknehmen? Der Dienst zählt wieder als erledigt, der Strike (und eine Strafwoche daraus) fällt weg.">
+                <button class="secondary">Zurücknehmen</button></form>
+            {% endif %}
             {% if a.status in (Status.pending, Status.missed) %}
               <form method="post" action="/admin/assignments/{{ a.id }}/excuse" class="inline">
                 <button class="secondary">Entschuldigen</button></form>

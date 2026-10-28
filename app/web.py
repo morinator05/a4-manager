@@ -572,6 +572,21 @@ async def admin_dispute(request: Request, session: Session, user: AdminUser, ass
     return redirect(safe_next(request.query_params.get("next") or "/history"))
 
 
+@router.post("/admin/assignments/{assignment_id}/undo-dispute")
+async def admin_undo_dispute(
+    request: Request, session: Session, user: AdminUser, assignment_id: int
+):
+    """Take a dispute back: done again, the strike and any penalty week from it are gone."""
+    try:
+        a = await duties.get_assignment(session, assignment_id)
+        await duties.undo_dispute(session, a, user, settings.now())
+        await session.commit()
+        flash(request, "Beanstandung zurückgenommen")
+    except DutyError as e:
+        flash(request, str(e), "error")
+    return redirect(safe_next(request.query_params.get("next") or "/history"))
+
+
 @router.post("/admin/tick")
 async def admin_tick(request: Request, session: Session, user: AdminUser):
     """Run the daily job now."""

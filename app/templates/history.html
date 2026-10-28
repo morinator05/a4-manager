@@ -40,6 +40,11 @@
                   hx-confirm="{{ claimed.user.display_name if claimed.user else 'ehemalig' }} hat eingetragen, aber nicht geputzt? Gibt einen Strike.">
               <button class="danger">Beanstanden</button>
             </form>
+          {% elif disputed %}
+            <form method="post" action="/admin/assignments/{{ disputed.id }}/undo-dispute?next={{ ('/history?until=' ~ until)|urlencode }}" class="inline"
+                  hx-confirm="Beanstandung zurücknehmen? Der Dienst zählt wieder als erledigt, der Strike (und eine Strafwoche daraus) fällt weg.">
+              <button class="secondary">Zurücknehmen</button>
+            </form>
           {% endif %}
         </td>
       {% endif %}

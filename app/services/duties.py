@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
-from app.models import Assignment, Duty, Slot, SlotEligible, Status, User
+from app.models import Assignment, Duty, Slot, SlotEligible, Status, Strike, User
 from app.services import scheduling, strikes
 from app.services.scheduling import Balance, Candidate, Role
 
@@ -349,6 +349,58 @@ async def dispute(session: AsyncSession, a: Assignment, actor: User, now: dateti
             issued_by_id=actor.id,
             today=now.date(),
         )
+
+
+async def undo_dispute(session: AsyncSession, a: Assignment, actor: User, now: datetime) -> None:
+    """Admin only: take a dispute back, as if it never happened.
+
+    The claimer has the duty done again, with its credit, and the dispute's strike is
+    deleted. If that strike was paid off by a penalty week that hasn't been done yet, the
+    week is dropped and the other strikes it paid off count again (so a new penalty week
+    may follow right away if there are enough).
+
+    Raises:
+        DutyError: if `actor` isn't the Flursprecher, the duty isn't disputed, someone else
+            has done it since, or the penalty week was already done, missed or excused.
+    """
+    if not actor.is_admin:
+        raise DutyError("Nur der Flursprecher kann Beanstandungen zurücknehmen")
+    if a.disputed_at is None or a.status is not Status.missed:
+        raise DutyError("Dieser Dienst ist nicht beanstandet")
+    if any(x.status is Status.done for x in a.slot.assignments):
+        raise DutyError("Den Dienst hat inzwischen jemand anderes erledigt")
+    strike = next(
+        (s for s in await strikes.for_assignment(session, a.id) if s.issued_by_id is not None),
+        None,
+    )
+    penalty = None
+    if strike is not None and strike.redeemed_by_assignment_id is not None:
+        penalty = await get_assignment(session, strike.redeemed_by_assignment_id)
+        if penalty.status is not Status.pending:
+            raise DutyError(
+                "Die Strafwoche aus dieser Beanstandung ist schon vorbei, "
+                "die Beanstandung lässt sich nicht mehr zurücknehmen"
+            )
+
+    if penalty is not None:
+        week = penalty.slot.start_date
+        paid_off = await session.scalars(
+            select(Strike).where(Strike.redeemed_by_assignment_id == penalty.id)
+        )
+        for s in paid_off:
+            s.redeemed_by_assignment_id = None
+        await session.delete(penalty.slot)
+    if strike is not None:
+        await session.delete(strike)
+    a.status = Status.done
+    a.disputed_at = None
+    await session.flush()
+
+    if penalty is not None and a.user_id is not None:
+        await strikes.check_threshold(session, a.user_id, now.date())
+        # A penalty week that already started replaced this week's regular Mülldienst.
+        if week <= now.date():
+            await materialize(session, Duty.trash, now.date())
 
 
 @dataclass

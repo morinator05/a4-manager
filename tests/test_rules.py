@@ -230,6 +230,92 @@ async def test_dispute_gives_strike_and_removes_credit(session):
     assert len(await strikes.active_strikes(session, p1.id)) == 1
 
 
+async def disputed_pair(session, people):
+    """Today's kitchen pair; p1 marks it done and the Flursprecher disputes it."""
+    admin = people[0]
+    await users.add_away(session, admin, MONDAY, MONDAY, MONDAY)
+    _, first, second, p1, p2 = await kitchen_pair(session, people)
+    await duties.mark_done(session, first, p1, at(MONDAY, 20))
+    await duties.dispute(session, first, admin, at(MONDAY, 21))
+    await session.commit()
+    return admin, first, second, p1
+
+
+async def test_undo_dispute_restores_done_and_credit(session):
+    people = await make_users(session)
+    admin, first, second, p1 = await disputed_pair(session, people)
+
+    with pytest.raises(DutyError):
+        await duties.undo_dispute(session, first, p1, at(MONDAY, 22))
+    await duties.undo_dispute(session, first, admin, at(MONDAY, 22))
+    await session.commit()
+
+    assert first.status is Status.done and first.disputed_at is None
+    assert first.completed_at == at(MONDAY, 20) and first.completed_by_id == p1.id
+    assert second.status is Status.covered
+    assert await strikes.for_assignment(session, first.id) == []
+    balances = await duties.load_balances(session, Duty.kitchen)
+    assert balances[p1.id].credit == 1
+    with pytest.raises(DutyError):
+        await duties.undo_dispute(session, first, admin, at(MONDAY, 23))
+
+
+async def test_undo_dispute_drops_penalty_week_from_it(session):
+    people = await make_users(session)
+    admin = people[0]
+    await users.add_away(session, admin, MONDAY, MONDAY, MONDAY)
+    _, first, second, p1, p2 = await kitchen_pair(session, people)
+    # The dispute is p1's third strike; p2's strikes must stay as they are.
+    for p in (p1, p2):
+        for _ in range(2):
+            await strikes.issue(session, user_id=p.id, reason="x", today=MONDAY)
+    await duties.mark_done(session, first, p1, at(MONDAY, 20))
+    await duties.dispute(session, first, admin, at(MONDAY, 21))
+    await session.commit()
+    assert await strikes.active_strikes(session, p1.id) == []
+    penalty_slots = (
+        select(Slot)
+        .join(Slot.assignments)
+        .where(Slot.is_penalty.is_(True), Assignment.user_id == p1.id)
+    )
+    assert (await session.scalars(penalty_slots)).one()
+
+    await duties.undo_dispute(session, first, admin, at(MONDAY, 22))
+    await session.commit()
+    assert (await session.scalars(penalty_slots)).all() == []
+    assert len(await strikes.active_strikes(session, p1.id)) == 2
+    assert first.status is Status.done and second.status is Status.covered
+    assert len(await strikes.active_strikes(session, p2.id)) == 2
+    # The week gets a regular Mülldienst again.
+    week = MONDAY + timedelta(days=7)
+    await jobs.daily_tick(session, at(week))
+    assert not (await duties.get_slot(session, Duty.trash, week)).is_penalty
+
+
+async def test_undo_dispute_refused_after_penalty_week_was_done(session):
+    people = await make_users(session)
+    admin = people[0]
+    await users.add_away(session, admin, MONDAY, MONDAY, MONDAY)
+    _, first, _, p1, _ = await kitchen_pair(session, people)
+    for _ in range(2):
+        await strikes.issue(session, user_id=p1.id, reason="x", today=MONDAY)
+    await duties.mark_done(session, first, p1, at(MONDAY, 20))
+    await duties.dispute(session, first, admin, at(MONDAY, 21))
+    await session.commit()
+    penalty = await session.scalar(
+        select(Assignment)
+        .join(Assignment.slot)
+        .where(Slot.is_penalty.is_(True), Assignment.user_id == p1.id)
+    )
+    penalty = await duties.get_assignment(session, penalty.id)
+    week = penalty.slot.start_date
+    await duties.mark_done(session, penalty, p1, at(week + timedelta(days=6), 18))
+    await session.commit()
+
+    with pytest.raises(DutyError):
+        await duties.undo_dispute(session, first, admin, at(week + timedelta(days=7)))
+
+
 async def test_admin_marking_missed_done_revokes_strike(session):
     people = await make_users(session)
     admin = people[0]
@@ -367,7 +453,13 @@ async def test_history_page_and_dispute(session, client):
     assert "Beanstanden" in r.text
     r = await client.post(f"/admin/assignments/{first.id}/dispute?next=/history")
     assert r.status_code == 303
-    assert "beanstandet" in (await client.get("/history")).text
+    r = await client.get("/history")
+    assert "beanstandet" in r.text and "Zurücknehmen" in r.text
+
+    r = await client.post(f"/admin/assignments/{first.id}/undo-dispute?next=/history")
+    assert r.status_code == 303
+    r = await client.get("/history")
+    assert "beanstandet" not in r.text and "Beanstanden" in r.text
 
 
 async def test_top_up_skips_slot_that_is_already_done(session):
