@@ -81,7 +81,6 @@ tr:has(.role-done) > td:first-child { box-shadow: inset 4px 0 var(--ok); color: 
 tr:has(.role-skip) > td:first-child { box-shadow: inset 4px 0 var(--warn); color: var(--warn);
                                        font-weight: 600; }
 tr:has(.role-done) > td, tr:has(.role-skip) > td { background: var(--card-alt); }
-.legend .role { font-size: .95em; }
 .person { display: flex; justify-content: space-between; align-items: center; gap: .5rem;
           padding: .5rem 0; border-top: 1px solid var(--border); }
 .person:first-of-type { border-top: 0; }
@@ -142,6 +141,17 @@ table.history .col-action { width: 12rem; }
          color: var(--ok); background: var(--ok-soft); border: 1px solid var(--ok-line); }
 .flash.error { color: var(--bad); background: var(--bad-soft); border-color: var(--bad-line); }
 details summary { cursor: pointer; }
+/* "?" after a heading: a small square link to that topic on the help page. */
+.help-link { display: inline-grid; place-content: center; width: 1.3em; height: 1.3em;
+             margin-left: .3rem; vertical-align: middle; font-size: .75rem; font-weight: 700;
+             text-decoration: none; color: var(--accent-strong); background: var(--accent-soft);
+             border: 1px solid var(--accent-line); }
+.help-link:hover { filter: brightness(.94); }
+/* Help page: one card per topic. */
+.card.help { margin-top: 1rem; }
+.card.help p { margin: 0 0 .6rem; }
+.card.help p:last-child { margin-bottom: 0; }
+.card.help .table-wrap { margin-top: .25rem; }
 h2 .muted { font-weight: 400; margin-left: .25rem; }
 .card .table-wrap { box-shadow: none; }
 .card form.row + .table-wrap { margin-top: 1rem; }

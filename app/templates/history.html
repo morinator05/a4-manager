@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Verlauf</h1>
-<p class="muted">Wer welchen Dienst als erledigt eingetragen hat, {{ since.strftime("%d.%m.%Y") }} bis {{ until.strftime("%d.%m.%Y") }}.</p>
+<h1>Verlauf {{ help_link("status") }}</h1>
+<p class="muted">{{ since.strftime("%d.%m.%Y") }} bis {{ until.strftime("%d.%m.%Y") }}</p>
 
 <form method="get" action="/history" class="row">
   <label>Bis Datum <input type="date" name="until" value="{{ until }}" max="{{ today }}"></label>

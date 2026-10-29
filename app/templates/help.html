@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>So funktioniert's</h1>
+<p>Auf unserem Flur teilen wir uns zwei Putzdienste. Diese Seite teilt sie gerecht auf und merkt
+  sich, wer was gemacht hat.</p>
+
+<section class="card help" id="dienste">
+  <h2>Die Dienste</h2>
+  <p><strong>Küchendienst</strong>: jeden Tag, die Gemeinschaftsküche aufräumen und sauber machen.
+    {% if kitchen_people > 1 %}Es sind {{ kitchen_people }} Leute eingeteilt, aber nur eine Person
+    muss putzen. Sprecht euch ab.{% endif %}</p>
+  <p><strong>Mülldienst</strong>: eine Woche lang (Montag bis Sonntag) den Müll rausbringen.
+    {% if trash_people > 1 %}Es sind {{ trash_people }} Leute eingeteilt, eine Person reicht.{% endif %}</p>
+  <p class="muted">Was genau dazugehört, erklärt dir der Flursprecher.</p>
+</section>
+
+<section class="card help" id="vorschau">
+  <h2>Wann bin ich dran?</h2>
+  <p>Die Seite teilt automatisch ein: Dran ist, wer bisher im Verhältnis am wenigsten geputzt hat.
+    Wer neu einzieht, fängt bei null an.</p>
+  <p>Auf der <a href="/">Übersicht</a> siehst du die Dienste von heute und den Plan für die nächsten
+    {{ preview_days }} Tage. Dein eigener Name ist <span class="me">farbig</span> markiert. Der Plan kann
+    sich noch ändern, z.&nbsp;B. wenn jemand einen Dienst verpasst oder sich abwesend meldet.</p>
+  <p>Sind die Leute von heute noch nicht fertig, stehen im Küchen-Plan statt ihrer Namen
+    <span class="role role-done"><span aria-hidden="true">✓</span> Erledigt</span> und
+    <span class="role role-skip"><span aria-hidden="true">✗</span> Ausgelassen</span>: So siehst du,
+    wann du wieder dran bist, je nachdem, ob du heute putzt (und es bis Mitternacht einträgst) oder nicht.</p>
+</section>
+
+<section class="card help" id="eintragen">
+  <h2>Erledigt eintragen</h2>
+  <p>Hast du geputzt, klick auf der <a href="/">Übersicht</a> bei deinem Namen auf
+    <strong>Erledigt</strong>. Nur wer wirklich geputzt hat, trägt sich ein.</p>
+  <p>Frist: {{ deadline_hour }}:00 Uhr
+    {% if deadline_days_after == 1 %}am Tag nach dem Dienst, beim Mülldienst also am Montag nach deiner Woche.
+    {% else %}{{ deadline_days_after }} Tage nach dem Dienst.{% endif %}
+    Danach gilt der Dienst als verpasst.</p>
+</section>
+
+<section class="card help" id="status">
+  <h2>Was bedeuten die Status?</h2>
+  <div class="table-wrap"><table>
+    <tr><td><span class="badge s-pending">offen</span></td><td>Noch nicht eingetragen, die Frist läuft noch.</td></tr>
+    <tr><td><span class="badge s-done">erledigt</span></td><td>Geputzt und eingetragen.</td></tr>
+    <tr><td><span class="badge s-covered">nicht nötig</span></td><td>Jemand anderes aus deinem Dienst hat geputzt. Kein Strike, zählt aber auch nicht als geputzt.</td></tr>
+    <tr><td><span class="badge s-missed">verpasst</span></td><td>Bis zur Frist hat niemand eingetragen. Alle Eingeteilten bekommen einen Strike.</td></tr>
+    <tr><td><span class="badge s-missed">beanstandet</span></td><td>Eingetragen, aber nicht geputzt. Gibt einen Strike.</td></tr>
+    <tr><td><span class="badge s-excused">entschuldigt</span></td><td>Vom Flursprecher entschuldigt: kein Strike, zählt aber auch nicht als geputzt.</td></tr>
+  </table></div>
+</section>
+
+<section class="card help" id="strikes">
+  <h2>Strikes</h2>
+  <p>Einen Strike gibt es für einen verpassten oder beanstandeten Dienst, oder vom Flursprecher.
+    Trägt der Flursprecher einen verpassten Dienst nach oder entschuldigt ihn, fällt der Strike weg.</p>
+  <p>Bei {{ strike_threshold }} Strikes bekommst du einen <span class="penalty">Straf-Mülldienst</span>:
+    eine Woche Mülldienst, die nicht als geputzt zählt. Danach sind die {{ strike_threshold }} Strikes weg.
+    Deine Strikes siehst du unter <a href="/me">Mein Profil</a>.</p>
+</section>
+
+<section class="card help" id="abwesend">
+  <h2>Abwesend</h2>
+  <p>Bist du weg, z.&nbsp;B. im Urlaub, trag es unter <a href="/me">Mein Profil</a> → Abwesenheit ein.
+    In der Zeit wirst du nicht eingeteilt, und es zählt nicht gegen dich. Dienste, die in die Zeit
+    fallen, übernimmt sofort jemand anderes.</p>
+</section>
+
+<section class="card help" id="schuld">
+  <h2>Statistik</h2>
+  <p>„Schuld“ in der <a href="/stats">Statistik</a> zeigt, wie viele Dienste jemand im Vergleich zum
+    fairen Anteil noch offen hat. Wer die höchste Schuld hat, ist als Nächstes dran. Eine negative Zahl
+    heißt: mehr geputzt als nötig. Küche und Müll werden getrennt gezählt.</p>
+</section>
+
+{% if user and user.is_admin %}
+<section class="card help" id="flursprecher">
+  <h2>Für den Flursprecher</h2>
+  <p><strong>Deaktivieren</strong>: Die Person wird nicht eingeteilt, z.&nbsp;B. bei längerer Abwesenheit.</p>
+  <p><strong>Auszug und Einzug</strong>: Den alten Bewohner löschen und die neue Person hinzufügen.
+    Nicht umbenennen, sonst übernimmt sie Verlauf und Strikes.</p>
+  <p><strong>Entschuldigen</strong> und <strong>Beanstanden</strong>: siehe <a href="#status">Status</a>.</p>
+  <p><strong>Tagesjob</strong>: läuft automatisch um 00:05 und {{ deadline_hour }}:05 Uhr, trägt verpasste
+    Dienste ein und teilt die nächsten ein.</p>
+</section>
+{% endif %}
+{% endblock %}

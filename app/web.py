@@ -71,7 +71,16 @@ def role(context, r: Role) -> Markup:
     )
 
 
+def help_link(topic: str) -> Markup:
+    """A small "?" after a heading, linking to that topic on the help page."""
+    return Markup(
+        '<a class="help-link" href="/help#{}" title="Wie funktioniert das?" '
+        'aria-label="Wie funktioniert das?">?</a>'
+    ).format(topic)
+
+
 templates.env.globals["person"] = person
+templates.env.globals["help_link"] = help_link
 templates.env.globals["role"] = role
 templates.env.tests["role"] = lambda x: isinstance(x, Role)
 templates.env.globals["Duty"] = Duty
@@ -210,7 +219,6 @@ async def dashboard(request: Request, session: Session, user: OptionalUser):
         kitchen=duty_card_ctx(kitchen, Duty.kitchen, user),
         trash=duty_card_ctx(trash, Duty.trash, user),
         kitchen_preview=kitchen_preview,
-        kitchen_has_roles=bool(shown),
         kitchen_later=later,
         trash_preview=await duties.preview(session, Duty.trash, tomorrow, horizon),
         users_by_id=await users_by_id(session),
@@ -390,6 +398,21 @@ async def stats(request: Request, session: Session, user: OptionalUser):
 
 
 # --- admin ------------------------------------------------------------------
+
+
+@router.get("/help")
+async def help_page(request: Request, user: OptionalUser):
+    """How the duties work, for new residents; visible without login."""
+    return render(
+        request,
+        "help.html",
+        user,
+        kitchen_people=settings.kitchen_people_per_day,
+        trash_people=settings.trash_people_per_week,
+        deadline_hour=settings.deadline_hour,
+        deadline_days_after=settings.deadline_days_after,
+        preview_days=settings.preview_days,
+    )
 
 
 @router.get("/admin")

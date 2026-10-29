@@ -13,7 +13,7 @@
 
 <div class="grid">
   <section>
-    <h2>Küchendienst – Vorschau</h2>
+    <h2>Küchendienst – Vorschau {{ help_link("vorschau") }}</h2>
     <div class="table-wrap"><table>
       {% for e in kitchen_preview %}
         <tr>
@@ -28,10 +28,9 @@
         </tr>
       {% endfor %}
     </table></div>
-    {% if kitchen_has_roles %}<p class="muted legend">Heute dran? <span class="role role-done"><span aria-hidden="true">✓</span> Erledigt</span> und <span class="role role-skip"><span aria-hidden="true">✗</span> Ausgelassen</span> zeigen, wann du wieder dran bist, je nachdem, ob du heute putzt (wenn es bis Mitternacht abgehakt ist).</p>{% endif %}
   </section>
   <section>
-    <h2>Mülldienst – Vorschau</h2>
+    <h2>Mülldienst – Vorschau {{ help_link("vorschau") }}</h2>
     <div class="table-wrap"><table>
       {% for e in trash_preview %}
         <tr>
@@ -41,7 +40,6 @@
         </tr>
       {% endfor %}
     </table></div>
-    <p class="muted">Die Vorschau ändert sich, wenn jemand einen Dienst verpasst oder sich abwesend meldet.</p>
   </section>
 </div>
 {% endblock %}
