@@ -82,6 +82,11 @@ templates.env.globals["Duty"] = Duty
 templates.env.globals["Status"] = Status
 templates.env.globals["strike_threshold"] = settings.strike_threshold
 templates.env.globals["min_password_length"] = auth.MIN_PASSWORD_LENGTH
+# Appended to the stylesheet URL, so browsers load it again after it changed instead of
+# keeping an old copy from their cache.
+templates.env.globals["css_version"] = int(
+    (Path(__file__).parent / "static" / "style.css").stat().st_mtime
+)
 templates.env.filters["short_date"] = lambda d: f"{d:%d.%m.}" if d else ""
 templates.env.filters["date_time"] = lambda d: (
     f"{d.astimezone(settings.tz):%d.%m.%Y %H:%M}" if d else ""

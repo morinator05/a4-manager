@@ -102,6 +102,12 @@ tr:has(.role-done) > td, tr:has(.role-skip) > td { background: var(--card-alt); 
                          border-color: var(--neutral-line); }
 /* Equal width for the status tags and the "Erledigt" button in a list of people. */
 .person .badge, .person button, .assignee .badge { min-width: 7.5em; }
+/* In the history, every tag is as wide as the longest ones, whatever the font: invisible,
+   zero-height copies of those labels set the width. */
+.assignee .badge::before, .assignee .badge::after { display: block; height: 0; overflow: hidden;
+                                                    visibility: hidden; }
+.assignee .badge::before { content: "beanstandet"; }
+.assignee .badge::after { content: "entschuldigt"; }
 
 /* Same font size, line height and vertical padding as the input fields, so both have the
    same height, also when the inputs sit in a label with smaller text. */
