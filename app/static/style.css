@@ -70,13 +70,12 @@ main > .card + .card { margin-top: 1rem; }
 .me { color: var(--me); }
 .me .room { color: var(--me); background: var(--me-room); }
 /* Preview stand-in for today's pair, not a name: a framed tag in the outcome's colour,
-   green "✓ Erledigt" and amber "✗ Ausgelassen"; ringed in purple for the pair themselves.
+   green "✓ Erledigt" and amber "✗ Ausgelassen".
    Its row gets a bar in the same colour, so you find the date at a glance. */
 .role { display: inline-block; font-weight: 600; line-height: 1.4; padding: 0 .45em;
         white-space: nowrap; border: 1px solid; }
 .role-done { color: var(--ok); background: var(--ok-soft); border-color: var(--ok-line); }
 .role-skip { color: var(--warn); background: var(--warn-soft); border-color: var(--warn-line); }
-.role.me { outline: 2px solid var(--me); outline-offset: 1px; }
 tr:has(.role-done) > td:first-child { box-shadow: inset 4px 0 var(--ok); color: var(--ok);
                                        font-weight: 600; }
 tr:has(.role-skip) > td:first-child { box-shadow: inset 4px 0 var(--warn); color: var(--warn);
