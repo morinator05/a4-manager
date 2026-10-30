@@ -184,11 +184,10 @@ async def test_preview_shows_open_pair_as_roles(session):
         )
         return [u for e in preview for u in e.user_ids]
 
-    members = tuple(sorted([p1.id, p2.id]))
     before = await shown()
     # Whoever doesn't clean is up again tomorrow; whoever does, much later.
-    assert before[:2].count(Role(MONDAY, False, members)) == 1
-    assert Role(MONDAY, True, members) in before
+    assert before[:2].count(Role(MONDAY, False)) == 1
+    assert Role(MONDAY, True) in before
     assert p1.id not in before and p2.id not in before
 
     # Once it's done, the outcome is known and the names are back.

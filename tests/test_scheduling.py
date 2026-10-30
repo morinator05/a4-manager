@@ -131,8 +131,7 @@ def test_open_slot_people_become_roles():
     result = plan(balances, cands, days(30, today + timedelta(days=1)), 2, [(today, pair)])
     shown = [u for picked in result for u in picked]
     assert not set(pair) & set(shown)
-    members = tuple(sorted(pair))
-    skipped, did = Role(today, False, members), Role(today, True, members)
+    skipped, did = Role(today, False), Role(today, True)
     # Without the credit you're up again much sooner than with it.
     assert skipped in shown and did in shown
     assert shown.index(skipped) < shown.index(did)
@@ -144,9 +143,9 @@ def test_fresh_start_non_cleaner_is_next():
     balances = {}
     accrue(balances, [c.id for c in cands])
     result = plan(balances, cands, days(14, START + timedelta(days=1)), 2, [(START, [1, 2])])
-    assert Role(START, False, (1, 2)) in result[0]
+    assert Role(START, False) in result[0]
     # The one who cleans owes the least, so they're not up again within two weeks.
-    assert all(Role(START, True, (1, 2)) not in picked for picked in result)
+    assert all(Role(START, True) not in picked for picked in result)
 
 
 def test_being_picked_without_cleaning_does_not_move_you_back():

@@ -77,8 +77,6 @@ class Role:
     # First day of the open slot.
     start: date
     did_it: bool
-    # The real people on the slot (any of them can end up in this role).
-    members: tuple[int, ...] = ()
 
 
 def week_start(d: date) -> date:
@@ -159,12 +157,11 @@ def _replace_by_roles(
     last_done = max((b.last_done for b in before if b.last_done), default=None)
     room = min((c.room for c in members), key=room_key)
     away = tuple(period for c in members for period in c.away)
-    member_tuple = tuple(sorted(c.id for c in members))
 
     result = [c for c in candidates if c.id not in ids]
     for did_it in [True] + [False] * (len(members) - 1):
         rid = -(len(roles) + 1)
-        roles[rid] = Role(start, did_it, member_tuple)
+        roles[rid] = Role(start, did_it)
         balances[rid] = Balance(
             expected=expected,
             credit=done + (1 if did_it else 0),
