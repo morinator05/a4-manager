@@ -1,5 +1,8 @@
 {% extends "base.html" %}
+{% from "partials/macros.html" import slot_dates %}
 {% block content %}
+{% set room_pattern = "[A-Za-z][0-9](0[1-9]|[1-9][0-9])" %}
+{% set room_title = "Buchstabe, Stockwerk, Zimmer 01–99, z.B. A403" %}
 <h1>Verwaltung {{ help_link("flursprecher") }}</h1>
 
 <section class="card">
@@ -9,7 +12,7 @@
     <div class="panel">
     <form method="post" action="/admin/users" class="row">
       <label>Name <input name="name" required></label>
-      <label class="short">Zimmer <input name="room_number" placeholder="z.B. A404" required pattern="[A-Za-z][0-9](0[1-9]|[1-9][0-9])" title="Buchstabe, Stockwerk, Zimmer 01–99, z.B. A403"></label>
+      <label class="short">Zimmer <input name="room_number" placeholder="z.B. A404" required pattern="{{ room_pattern }}" title="{{ room_title }}"></label>
       <label>Benutzername <input name="username" required></label>
       <label>Startpasswort <input name="password" minlength="{{ min_password_length }}" required></label>
       <label class="check"><span><input type="checkbox" name="is_admin" value="true"> Flursprecher</span></label>
@@ -18,7 +21,6 @@
     </div>
   </details>
 
-  {# One line per resident; editing, pausing and deleting are folded away behind it. #}
   {% for u in users %}
     <details class="resident{% if not u.active %} inactive{% endif %}">
       <summary>
@@ -29,7 +31,7 @@
       <div class="panel">
         <form method="post" action="/admin/users/{{ u.id }}/edit" class="row">
           <label>Name <input name="name" value="{{ u.name }}"></label>
-          <label class="short">Zimmer <input name="room_number" value="{{ u.room_number }}" pattern="[A-Za-z][0-9](0[1-9]|[1-9][0-9])" title="Buchstabe, Stockwerk, Zimmer 01–99, z.B. A403"></label>
+          <label class="short">Zimmer <input name="room_number" value="{{ u.room_number }}" pattern="{{ room_pattern }}" title="{{ room_title }}"></label>
           <label>Neues Passwort <input name="password" minlength="{{ min_password_length }}" placeholder="unverändert"></label>
           <label class="check"><span><input type="checkbox" name="is_admin" value="true" {% if u.is_admin %}checked{% endif %}
                  {% if u.id == user.id %}disabled{% endif %}> Flursprecher</span></label>
@@ -91,7 +93,7 @@
     {% for slot in slots %}
       {% for a in slot.assignments %}
         <tr>
-          <td>{{ slot.start_date|weekday }} {{ slot.start_date|short_date }}{% if slot.end_date != slot.start_date %}–{{ slot.end_date|short_date }}{% endif %}</td>
+          <td>{{ slot_dates(slot) }}</td>
           <td>{{ slot.duty.label }}{% if slot.is_penalty %} <span class="penalty">(Strafe)</span>{% endif %}</td>
           <td>{{ person(a.user) }}</td>
           <td>{% include "partials/status.html" %}</td>

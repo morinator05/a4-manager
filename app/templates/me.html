@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/macros.html" import slot_dates %}
 {% block content %}
 <h1>{{ person(user) }}</h1>
 {% if not user.active %}<p class="flash error">Du bist inaktiv und wirst nicht eingeteilt.</p>{% endif %}
@@ -51,7 +52,7 @@
   <tr><th>Datum</th><th>Dienst</th><th class="end">Status</th></tr>
   {% for a in recent_duties %}
     <tr>
-      <td>{{ a.slot.start_date|weekday }} {{ a.slot.start_date|short_date }}{% if a.slot.end_date != a.slot.start_date %}–{{ a.slot.end_date|short_date }}{% endif %}</td>
+      <td>{{ slot_dates(a.slot) }}</td>
       <td>{{ a.slot.duty.label }}{% if a.slot.is_penalty %} <span class="penalty">(Strafe)</span>{% endif %}</td>
       <td class="end">{% include "partials/status.html" %}</td>
     </tr>

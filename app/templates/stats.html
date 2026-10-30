@@ -14,9 +14,9 @@
       <td>{{ person(u) }}{% if not u.active %} (inaktiv){% endif %}</td>
       <td>{{ counts.get((u.id, Duty.kitchen, Status.done), 0) }}</td>
       <td>{{ counts.get((u.id, Duty.kitchen, Status.missed), 0) }}</td>
-      <td>{{ "%.2f"|format(kb.debt|float) if kb else "0.00" }}</td>
+      <td>{{ kb|debt }}</td>
       <td>{{ counts.get((u.id, Duty.trash, Status.done), 0) }}</td>
-      <td>{{ "%.2f"|format(tb.debt|float) if tb else "0.00" }}</td>
+      <td>{{ tb|debt }}</td>
       <td>{{ counts.get((u.id, Duty.trash, "penalty"), 0) }}</td>
       {# Green without strikes, red one strike before the penalty week, orange in between. #}
       {% set n = active[u.id] %}

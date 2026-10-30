@@ -107,6 +107,7 @@ templates.env.filters["long_date"] = lambda d: f"{d:%d.%m.%Y}" if d else ""
 templates.env.filters["date_time"] = lambda d: (
     f"{d.astimezone(settings.tz):%d.%m.%Y %H:%M}" if d else ""
 )
+templates.env.filters["debt"] = lambda balance: f"{float(balance.debt):.2f}" if balance else "0.00"
 templates.env.filters["weekday"] = lambda d: ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"][d.weekday()]
 
 

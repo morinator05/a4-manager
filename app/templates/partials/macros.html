@@ -1,0 +1,1 @@
+{% macro slot_dates(slot) %}{{ slot.start_date|weekday }} {{ slot.start_date|short_date }}{% if slot.end_date != slot.start_date %}–{{ slot.end_date|short_date }}{% endif %}{% endmacro %}

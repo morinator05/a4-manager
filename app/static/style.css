@@ -54,33 +54,31 @@ main > .card + .card { margin-top: 1rem; }
 .muted { color: var(--muted); font-size: .9em; }
 .penalty { color: var(--bad); font-weight: 600; }
 .strikes { font-weight: 600; }
-.strikes.ok { color: var(--ok); } .strikes.warn { color: var(--warn); } .strikes.bad { color: var(--bad); }
+.strikes.ok { color: var(--ok); }
+.strikes.warn { color: var(--warn); }
+.strikes.bad { color: var(--bad); }
 
-/* People: the name comes first, the room is a smaller, quieter tag after it. */
 .person-name { font-weight: 600; }
-.room { display: inline-block; font-size: .78em; font-weight: 500; line-height: 1.4;
-        padding: 0 .4em; vertical-align: middle;
-        color: var(--room); background: var(--room-soft); white-space: nowrap; }
-/* Small labels after a person, in the same shape as the room tag: role and paused state. */
-.tag { display: inline-block; font-size: .78em; font-weight: 500; line-height: 1.4;
-       padding: 0 .4em; vertical-align: middle; white-space: nowrap;
-       color: var(--neutral); background: var(--neutral-soft); }
+/* Small tags after a name: the room, and labels like Flursprecher or inaktiv. */
+.room, .tag { display: inline-block; font-size: .78em; font-weight: 500; line-height: 1.4;
+              padding: 0 .4em; vertical-align: middle; white-space: nowrap; }
+.room { color: var(--room); background: var(--room-soft); }
+.tag { color: var(--neutral); background: var(--neutral-soft); }
 .tag-admin { color: var(--accent-strong); background: var(--accent-soft); }
-/* The logged-in user's own name, so you spot yourself at a glance. */
+/* The logged-in user's own name. */
 .me { color: var(--me); }
 .me .room { color: var(--me); background: var(--me-room); }
-/* Preview stand-in for today's pair, not a name: a framed tag in the outcome's colour,
-   green "✓ Erledigt" and amber "✗ Ausgelassen".
-   Its row gets a bar in the same colour, so you find the date at a glance. */
+/* Preview stand-in for an open slot's people, in the outcome's colour. Its row gets a bar
+   in the same colour, so you find the date at a glance. */
 .role { display: inline-block; font-weight: 600; line-height: 1.4; padding: 0 .45em;
         white-space: nowrap; border: 1px solid; }
 .role-done { color: var(--ok); background: var(--ok-soft); border-color: var(--ok-line); }
 .role-skip { color: var(--warn); background: var(--warn-soft); border-color: var(--warn-line); }
-tr:has(.role-done) > td:first-child { box-shadow: inset 4px 0 var(--ok); color: var(--ok);
-                                       font-weight: 600; }
-tr:has(.role-skip) > td:first-child { box-shadow: inset 4px 0 var(--warn); color: var(--warn);
-                                       font-weight: 600; }
-tr:has(.role-done) > td, tr:has(.role-skip) > td { background: var(--card-alt); }
+tr:has(.role-done) { --outcome: var(--ok); }
+tr:has(.role-skip) { --outcome: var(--warn); }
+tr:has(.role) > td { background: var(--card-alt); }
+tr:has(.role) > td:first-child { box-shadow: inset 4px 0 var(--outcome); color: var(--outcome);
+                                 font-weight: 600; }
 .person { display: flex; justify-content: space-between; align-items: center; gap: .5rem;
           padding: .5rem 0; border-top: 1px solid var(--border); }
 .person:first-of-type { border-top: 0; }
@@ -122,6 +120,7 @@ input, select { font: inherit; font-size: .9rem; line-height: 1.5; padding: .35r
 /* Firefox ignores line-height on selects: line + padding + border, as computed for inputs. */
 select { height: calc(1.5em + .7rem + 2px); }
 form.inline { display: inline; margin: 0; }
+form.narrow { max-width: 420px; }
 form.row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: end; }
 form.row label { display: flex; flex-direction: column; font-size: .85rem; color: var(--muted); }
 

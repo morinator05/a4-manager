@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/macros.html" import slot_dates %}
 {% block content %}
 <h1>Verlauf {{ help_link("status") }}</h1>
 <p class="muted">{{ since|long_date }} bis {{ until|long_date }}</p>
@@ -17,7 +18,7 @@
     {% set claimed = slot.claimed_assignment %}
     {% set disputed = slot.assignments|selectattr("disputed_at")|first %}
     <tr>
-      <td>{{ slot.start_date|weekday }} {{ slot.start_date|short_date }}{% if slot.end_date != slot.start_date %}–{{ slot.end_date|short_date }}{% endif %}
+      <td>{{ slot_dates(slot) }}
           {% if slot.is_penalty %}<span class="penalty">(Strafe)</span>{% endif %}</td>
       <td>
         {% for a in slot.assignments %}
@@ -25,12 +26,12 @@
         {% else %}<span class="muted">–</span>{% endfor %}
       </td>
       <td>
-        {% set c = claimed or disputed %}
-        {% if c %}
-          <strong>{{ person(c.user) }}</strong>
-          <div class="muted">eingetragen {{ c.completed_at|date_time }}
-            {% if c.completed_by and c.completed_by_id != c.user_id %}durch {{ person(c.completed_by) }}{% endif %}</div>
-          {% if c.disputed_at %}<div class="penalty">beanstandet {{ c.disputed_at|date_time }}</div>{% endif %}
+        {% set claim = claimed or disputed %}
+        {% if claim %}
+          <strong>{{ person(claim.user) }}</strong>
+          <div class="muted">eingetragen {{ claim.completed_at|date_time }}
+            {% if claim.completed_by and claim.completed_by_id != claim.user_id %}durch {{ person(claim.completed_by) }}{% endif %}</div>
+          {% if claim.disputed_at %}<div class="penalty">beanstandet {{ claim.disputed_at|date_time }}</div>{% endif %}
         {% else %}<span class="muted">niemand</span>{% endif %}
       </td>
       {% if user.is_admin %}

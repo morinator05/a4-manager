@@ -13,9 +13,7 @@
   {% else %}
     {% for a in slot.assignments %}
       <div class="person">
-        <div>
-          <div class="name">{{ person(a.user) }}</div>
-        </div>
+        <div class="name">{{ person(a.user) }}</div>
         {% if can_mark(a) %}
           <button hx-post="/assignments/{{ a.id }}/done?card=1"
                   hx-target="#card-{{ duty.value }}" hx-swap="outerHTML">Erledigt</button>
