@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Verlauf</h1>
-<p class="muted">Wer welchen Dienst als erledigt eingetragen hat, {{ since.strftime("%d.%m.%Y") }} bis {{ until.strftime("%d.%m.%Y") }}.</p>
+<h1>Verlauf {{ help_link("status") }}</h1>
+<p class="muted">{{ since.strftime("%d.%m.%Y") }} bis {{ until.strftime("%d.%m.%Y") }}</p>
 
 <form method="get" action="/history" class="row">
   <label>Bis Datum <input type="date" name="until" value="{{ until }}" max="{{ today }}"></label>
@@ -12,7 +12,7 @@
 <h2>{{ duty.label }}</h2>
 <div class="table-wrap"><table class="history">
   <colgroup><col class="col-date"><col><col>{% if user.is_admin %}<col class="col-action">{% endif %}</colgroup>
-  <tr><th>Datum</th><th>Eingeteilt</th><th>Erledigt von</th>{% if user.is_admin %}<th></th>{% endif %}</tr>
+  <tr><th>Datum</th><th>Eingeteilt</th><th>Erledigt von</th>{% if user.is_admin %}<th class="end"></th>{% endif %}</tr>
   {% for slot in slots if slot.duty == duty %}
     {% set claimed = slot.assignments|selectattr("status", "equalto", Status.done)|first %}
     {% set disputed = slot.assignments|selectattr("disputed_at")|first %}
@@ -34,7 +34,7 @@
         {% else %}<span class="muted">niemand</span>{% endif %}
       </td>
       {% if user.is_admin %}
-        <td>
+        <td class="end">
           {% if claimed %}
             <form method="post" action="/admin/assignments/{{ claimed.id }}/dispute?next={{ ('/history?until=' ~ until)|urlencode }}" class="inline"
                   hx-confirm="{{ claimed.user.display_name if claimed.user else 'ehemalig' }} hat eingetragen, aber nicht geputzt? Gibt einen Strike.">

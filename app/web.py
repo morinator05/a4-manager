@@ -60,22 +60,27 @@ def role(context, r: Role) -> Markup:
     """A preview stand-in: "Erledigt" (whoever cleans) or "Ausgelassen" (whoever doesn't).
 
     For an earlier slot that is still open (yesterday's before the deadline), its date
-    follows. Green with a tick if done, amber with a cross if not; ringed for the slot's
-    own people.
+    follows. Green with a tick if done, amber with a cross if not.
     """
     text = "Erledigt" if r.did_it else "Ausgelassen"
     if r.start != context.get("today"):
         text += f" {r.start:%d.%m.}"
     css = "role role-done" if r.did_it else "role role-skip"
-    viewer = context.get("user")
-    if viewer is not None and viewer.id in r.members:
-        css += " me"
     return Markup('<span class="{}"><span aria-hidden="true">{}</span> {}</span>').format(
         css, "✓" if r.did_it else "✗", text
     )
 
 
+def help_link(topic: str) -> Markup:
+    """A small "?" after a heading, linking to that topic on the help page."""
+    return Markup(
+        '<a class="help-link" href="/help#{}" title="Wie funktioniert das?" '
+        'aria-label="Wie funktioniert das?">?</a>'
+    ).format(topic)
+
+
 templates.env.globals["person"] = person
+templates.env.globals["help_link"] = help_link
 templates.env.globals["role"] = role
 templates.env.tests["role"] = lambda x: isinstance(x, Role)
 templates.env.globals["Duty"] = Duty
@@ -214,7 +219,6 @@ async def dashboard(request: Request, session: Session, user: OptionalUser):
         kitchen=duty_card_ctx(kitchen, Duty.kitchen, user),
         trash=duty_card_ctx(trash, Duty.trash, user),
         kitchen_preview=kitchen_preview,
-        kitchen_has_roles=bool(shown),
         kitchen_later=later,
         trash_preview=await duties.preview(session, Duty.trash, tomorrow, horizon),
         users_by_id=await users_by_id(session),
@@ -394,6 +398,21 @@ async def stats(request: Request, session: Session, user: OptionalUser):
 
 
 # --- admin ------------------------------------------------------------------
+
+
+@router.get("/help")
+async def help_page(request: Request, user: OptionalUser):
+    """How the duties work, for new residents; visible without login."""
+    return render(
+        request,
+        "help.html",
+        user,
+        kitchen_people=settings.kitchen_people_per_day,
+        trash_people=settings.trash_people_per_week,
+        deadline_hour=settings.deadline_hour,
+        deadline_days_after=settings.deadline_days_after,
+        preview_days=settings.preview_days,
+    )
 
 
 @router.get("/admin")

@@ -338,6 +338,19 @@ async def test_web_permissions(session, client):
     assert "Neu" in (await client.get("/admin")).text
 
 
+async def test_help_page(session, client):
+    await make_users(session, n=3)
+    r = await client.get("/help")
+    assert r.status_code == 200 and "Küchendienst" in r.text
+    assert "Für den Flursprecher" not in r.text
+
+    await login(client, "p2")
+    assert "Für den Flursprecher" not in (await client.get("/help")).text
+    await client.post("/logout")
+    await login(client, "p1")
+    assert "Für den Flursprecher" in (await client.get("/help")).text
+
+
 async def test_understaffed_slot_is_topped_up(session):
     # The tick ran before anyone lived on the floor.
     await jobs.daily_tick(session, at(MONDAY))

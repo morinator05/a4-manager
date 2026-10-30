@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Verwaltung</h1>
+<h1>Verwaltung {{ help_link("flursprecher") }}</h1>
 
 <section class="card">
   <h2>Bewohner <span class="muted">{{ users|selectattr("active")|list|length }} aktiv</span></h2>
@@ -8,10 +8,10 @@
     <summary>Bewohner hinzufügen</summary>
     <div class="panel">
     <form method="post" action="/admin/users" class="row">
-      <label>Name <input name="name" size="16" required></label>
-      <label>Zimmer <input name="room_number" size="6" placeholder="z.B. A404" required pattern="[A-Za-z][0-9](0[1-9]|[1-9][0-9])" title="Buchstabe, Stockwerk, Zimmer 01–99, z.B. A403"></label>
-      <label>Benutzername <input name="username" size="14" required></label>
-      <label>Startpasswort <input name="password" size="14" minlength="{{ min_password_length }}" required></label>
+      <label>Name <input name="name" required></label>
+      <label class="short">Zimmer <input name="room_number" placeholder="z.B. A404" required pattern="[A-Za-z][0-9](0[1-9]|[1-9][0-9])" title="Buchstabe, Stockwerk, Zimmer 01–99, z.B. A403"></label>
+      <label>Benutzername <input name="username" required></label>
+      <label>Startpasswort <input name="password" minlength="{{ min_password_length }}" required></label>
       <label class="check"><span><input type="checkbox" name="is_admin" value="true"> Flursprecher</span></label>
       <button>Hinzufügen</button>
     </form>
@@ -29,7 +29,7 @@
       <div class="panel">
         <form method="post" action="/admin/users/{{ u.id }}/edit" class="row">
           <label>Name <input name="name" value="{{ u.name }}"></label>
-          <label>Zimmer <input name="room_number" value="{{ u.room_number }}" size="6" pattern="[A-Za-z][0-9](0[1-9]|[1-9][0-9])" title="Buchstabe, Stockwerk, Zimmer 01–99, z.B. A403"></label>
+          <label class="short">Zimmer <input name="room_number" value="{{ u.room_number }}" pattern="[A-Za-z][0-9](0[1-9]|[1-9][0-9])" title="Buchstabe, Stockwerk, Zimmer 01–99, z.B. A403"></label>
           <label>Neues Passwort <input name="password" minlength="{{ min_password_length }}" placeholder="unverändert"></label>
           <label class="check"><span><input type="checkbox" name="is_admin" value="true" {% if u.is_admin %}checked{% endif %}
                  {% if u.id == user.id %}disabled{% endif %}> Flursprecher</span></label>
@@ -46,9 +46,6 @@
           </form>
           {% endif %}
         </div>
-        <p class="muted">Deaktiviert: wird nicht eingeteilt, z.B. bei längerer Abwesenheit.
-          Neue Person im Zimmer? Nicht umbenennen, sondern den alten Bewohner löschen und die neue
-          Person hinzufügen. Sonst übernimmt sie Verlauf und Strikes.</p>
       </div>
     </details>
   {% endfor %}
@@ -66,14 +63,14 @@
     <button class="danger">Strike vergeben</button>
   </form>
   <div class="table-wrap"><table>
-    <tr><th>Datum</th><th>Bewohner</th><th>Grund</th><th>Von</th><th>Status</th></tr>
+    <tr><th>Datum</th><th>Bewohner</th><th>Grund</th><th>Von</th><th class="end">Status</th></tr>
     {% for s in strikes %}
       <tr{% if s.revoked_at or s.redeemed_by_assignment_id %} class="muted"{% endif %}>
         <td>{{ s.created_at|date_time }}</td>
         <td>{{ person(s.user) }}</td>
         <td>{{ s.reason }}</td>
         <td>{{ "automatisch" if s.auto else (person(s.issued_by) if s.issued_by else "–") }}</td>
-        <td>
+        <td class="end">
           {% if s.revoked_at %}<span class="badge s-excused">zurückgenommen</span>
           {% elif s.redeemed_by_assignment_id %}<span class="badge s-excused">abgearbeitet</span>
           {% else %}
@@ -90,7 +87,7 @@
 <section class="card">
   <h2>Dienste <span class="muted">letzte 14 Tage und geplant</span></h2>
   <div class="table-wrap"><table>
-    <tr><th>Datum</th><th>Dienst</th><th>Bewohner</th><th>Status</th><th></th></tr>
+    <tr><th>Datum</th><th>Dienst</th><th>Bewohner</th><th>Status</th><th class="end"></th></tr>
     {% for slot in slots %}
       {% set slot_done = slot.assignments|selectattr("status", "equalto", Status.done)|list %}
       {% for a in slot.assignments %}
@@ -99,7 +96,7 @@
           <td>{{ slot.duty.label }}{% if slot.is_penalty %} <span class="penalty">(Strafe)</span>{% endif %}</td>
           <td>{{ person(a.user) }}</td>
           <td>{% include "partials/status.html" %}</td>
-          <td style="white-space:nowrap">
+          <td class="end">
             {% if not slot_done %}
               <form method="post" action="/assignments/{{ a.id }}/done?next=/admin" class="inline">
                 <button class="secondary">Erledigt</button></form>
@@ -121,7 +118,6 @@
 
   <form method="post" action="/admin/tick" class="actions">
     <button class="secondary">Tagesjob jetzt ausführen</button>
-    <span class="muted">Läuft automatisch um 00:05 und nach der Eintrage-Frist.</span>
   </form>
 </section>
 {% endblock %}
