@@ -29,15 +29,12 @@ class LoginThrottle:
         self._failures: dict[str, list[float]] = {}
 
     def is_blocked(self, key: str) -> bool:
-        """True after `max_failures` failed attempts within the last `window_seconds`."""
         return len(self._recent_failures(key)) >= self._max_failures
 
     def record_failure(self, key: str) -> None:
-        """Remember a failed attempt now."""
         self._failures.setdefault(key, []).append(self._clock())
 
     def reset(self, key: str) -> None:
-        """Forget all failures, after a successful login."""
         self._failures.pop(key, None)
 
     def _recent_failures(self, key: str) -> list[float]:

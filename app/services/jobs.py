@@ -23,7 +23,7 @@ async def daily_tick(session: AsyncSession, now: datetime) -> None:
     Safe to run any number of times; it also commits. Runs on a schedule, on startup,
     from the Flursprecher page, and from the dashboard if today's slots are missing.
     """
-    # Serialize ticks (scheduler, startup and page loads may race).
+    # The scheduler, startup and page loads may run it at the same time.
     await session.execute(text("SELECT pg_advisory_xact_lock(:id)"), {"id": DAILY_TICK_LOCK_ID})
     missed = await duties.process_overdue(session, now)
     await duties.materialize(session, Duty.kitchen, now.date())

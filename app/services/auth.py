@@ -16,12 +16,10 @@ _DUMMY_HASH = _hasher.hash("no-such-user")
 
 
 def hash_password(password: str) -> str:
-    """Hash for storing; includes a random salt, so equal passwords get different hashes."""
     return _hasher.hash(password)
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    """True if `password` matches the stored hash."""
     return _hasher.verify(password, password_hash)
 
 

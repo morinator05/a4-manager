@@ -42,11 +42,7 @@ async def issue(
 ) -> Strike:
     """Give a strike; if it is the user's `strike_threshold`-th, a penalty week follows.
 
-    Args:
-        today: Used to find the penalty week (the first free one after this week).
-        auto: True when the daily job gives it for a missed duty.
-        assignment_id: The duty it is for, so doing that duty later can revoke it.
-        issued_by_id: The Flursprecher who gave it, if given by hand.
+    `today` is used to find the penalty week: the first free one after this week.
     """
     strike = Strike(
         user_id=user_id,
@@ -62,7 +58,6 @@ async def issue(
 
 
 async def revoke(session: AsyncSession, strike: Strike, now: datetime) -> None:
-    """The Flursprecher takes a strike back."""
     strike.revoked_at = now
     await session.flush()
 

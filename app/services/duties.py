@@ -23,7 +23,6 @@ class DutyError(Exception):
 
 
 def people_per_slot(duty: Duty) -> int:
-    """How many people are put on a slot. Only one of them has to actually do it."""
     if duty is Duty.kitchen:
         return settings.kitchen_people_per_day
     return settings.trash_people_per_week
@@ -44,7 +43,6 @@ def deadline(slot: Slot) -> datetime:
 
 
 async def load_candidates(session: AsyncSession) -> list[Candidate]:
-    """All active users with their away periods, as input for `scheduling`."""
     users = await session.scalars(
         select(User).where(User.active.is_(True)).options(selectinload(User.away_periods))
     )
@@ -150,6 +148,7 @@ async def materialize(session: AsyncSession, duty: Duty, day: date) -> Slot:
 async def _top_up(session: AsyncSession, slot: Slot, missing: int) -> None:
     """Add `missing` people to an existing slot, including residents added since."""
     candidates = await load_candidates(session)
+    # `get_slot` doesn't load `eligible`, and async code can't load it lazily.
     await session.refresh(slot, ["eligible"])
     known = {e.user_id for e in slot.eligible}
     for c in candidates:
@@ -240,11 +239,7 @@ async def process_overdue(session: AsyncSession, now: datetime) -> list[Assignme
 
 
 async def get_assignment(session: AsyncSession, assignment_id: int) -> Assignment:
-    """The assignment with its slot and the slot's other people loaded.
-
-    Raises:
-        DutyError: if there is no such assignment.
-    """
+    """The assignment with its slot and the slot's other people loaded."""
     a = await session.scalar(
         select(Assignment)
         .where(Assignment.id == assignment_id)
@@ -289,9 +284,6 @@ async def mark_done(session: AsyncSession, a: Assignment, actor: User, now: date
 
     Also revokes strikes already given for the slot (the Flursprecher may mark it done
     after the deadline).
-
-    Raises:
-        DutyError: if `actor` may not mark it (see `can_mark_done`).
     """
     if not can_mark_done(a, actor, now):
         raise DutyError("Du kannst diesen Dienst nicht abhaken")
@@ -308,11 +300,7 @@ async def mark_done(session: AsyncSession, a: Assignment, actor: User, now: date
 
 
 async def excuse(session: AsyncSession, a: Assignment, actor: User, now: datetime) -> None:
-    """Admin only: nobody is blamed, but the person gets no credit either.
-
-    Raises:
-        DutyError: if `actor` isn't the Flursprecher.
-    """
+    """Admin only: nobody is blamed, but the person gets no credit either."""
     if not actor.is_admin:
         raise DutyError("Nur der Flursprecher kann Dienste entschuldigen")
     await _revoke_strikes(session, a, now)
@@ -326,9 +314,6 @@ async def dispute(session: AsyncSession, a: Assignment, actor: User, now: dateti
     """Admin only: it was marked done but not actually done. The claimer gets a strike.
 
     The claimer loses the credit; the partner stays "covered" and gets nothing.
-
-    Raises:
-        DutyError: if `actor` isn't the Flursprecher or the duty isn't done.
     """
     if not actor.is_admin:
         raise DutyError("Nur der Flursprecher kann Dienste beanstanden")

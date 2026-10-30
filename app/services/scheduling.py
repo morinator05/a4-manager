@@ -46,18 +46,17 @@ class Balance:
 
     @property
     def debt(self) -> Fraction:
-        """How much work the user owes; changes only when a duty is marked done."""
         return self.expected - self.credit
 
     @property
     def priority(self) -> Fraction:
-        """The debt minus open shares; the highest are picked next."""
+        """The highest are picked next."""
         return self.debt - self.pending
 
 
 @dataclass(frozen=True)
 class Candidate:
-    """A user who can be picked (active), with the periods they are away."""
+    """An active user, as input for picking."""
 
     id: int
     room: str
