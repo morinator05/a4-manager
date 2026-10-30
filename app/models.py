@@ -189,7 +189,6 @@ class Strike(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="strikes", foreign_keys=[user_id])
-    assignment: Mapped[Assignment | None] = relationship(foreign_keys=[assignment_id])
     issued_by: Mapped[User | None] = relationship(foreign_keys=[issued_by_id])
 
     @property
