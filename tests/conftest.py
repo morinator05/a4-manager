@@ -16,6 +16,10 @@ from app import db
 from app.config import settings
 from app.models import Base
 
+# An exported DATABASE_URL wins over the default above, and every test drops all tables.
+if not make_url(settings.database_url).database.endswith("_test"):
+    pytest.exit("DATABASE_URL must point at a *_test database: the tests drop all tables")
+
 
 async def ensure_test_database() -> None:
     """Create the test database if it doesn't exist yet."""
