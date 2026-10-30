@@ -1,8 +1,7 @@
-"""Request dependencies for the routes: database session and the logged-in user.
+"""Route dependencies: the database session and the logged-in user.
 
-FastAPI resolves these per request, similar to constructor injection. A route parameter
-`user: AdminUser` loads the logged-in user and also checks that they are the Flursprecher,
-before the route body runs.
+A route parameter `user: AdminUser` loads the logged-in user and checks that they are the
+Flursprecher before the route body runs.
 """
 
 from typing import Annotated
@@ -21,7 +20,7 @@ class LoginRequired(Exception):
 
 
 async def optional_user(request: Request, session: Session) -> User | None:
-    """The logged-in user, or None. A session of a since deleted user is cleared."""
+    """A login session of a since deleted user is cleared."""
     user_id = request.session.get("user_id")
     if user_id is None:
         return None
@@ -32,28 +31,17 @@ async def optional_user(request: Request, session: Session) -> User | None:
 
 
 async def require_user(user: Annotated[User | None, Depends(optional_user)]) -> User:
-    """The logged-in user.
-
-    Raises:
-        LoginRequired: if nobody is logged in.
-    """
     if user is None:
         raise LoginRequired
     return user
 
 
 async def require_admin(user: Annotated[User, Depends(require_user)]) -> User:
-    """The logged-in user, who must be the Flursprecher (admin).
-
-    Raises:
-        HTTPException: 403 for everybody else.
-    """
     if not user.is_admin:
         raise HTTPException(status_code=403, detail="Nur für den Flursprecher")
     return user
 
 
-# Use these as route parameter types.
 OptionalUser = Annotated[User | None, Depends(optional_user)]
 CurrentUser = Annotated[User, Depends(require_user)]
 AdminUser = Annotated[User, Depends(require_admin)]

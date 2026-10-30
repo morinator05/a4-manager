@@ -18,18 +18,17 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
-    """Base class of all tables."""
+    pass
 
 
 class Duty(str, enum.Enum):
-    """The kind of duty. Kitchen slots are one day, trash slots one Monday-Sunday week."""
+    """Kitchen slots are one day, trash slots one Monday-Sunday week."""
 
     kitchen = "kitchen"
     trash = "trash"
 
     @property
     def label(self) -> str:
-        """German name shown in the UI."""
         return {"kitchen": "Küchendienst", "trash": "Mülldienst"}[self.value]
 
 
@@ -49,7 +48,6 @@ class Status(str, enum.Enum):
 
     @property
     def label(self) -> str:
-        """German name shown in the UI."""
         return {
             "pending": "offen",
             "done": "erledigt",
@@ -87,15 +85,11 @@ class User(Base):
 
     @property
     def first_name(self) -> str:
-        """The first word of the name; residents are shown by first name and room."""
         return self.name.split()[0] if self.name.strip() else self.name
 
     @property
     def display_name(self) -> str:
-        """Plain-text form, e.g. "Anna (A401)", for messages and confirm dialogs.
-
-        In page content `person()` in `web.py` is used instead (name and room styled).
-        """
+        """For flash messages and confirm dialogs; pages use the styled `person()` from `web.py`."""
         return f"{self.first_name} ({self.room_number})"
 
 
@@ -113,7 +107,7 @@ class AwayPeriod(Base):
 
 
 class Slot(Base):
-    """One duty period: a single day for kitchen, a Monday-Sunday week for trash."""
+    """One period of a duty; how long it is depends on the `Duty`."""
 
     __tablename__ = "slots"
     __table_args__ = (UniqueConstraint("duty", "start_date"),)
@@ -149,7 +143,7 @@ class SlotEligible(Base):
 
 
 class Assignment(Base):
-    """One person put on one slot. A kitchen slot has two of these, a trash slot one."""
+    """One person put on one slot. How many per slot is set in `config.py`."""
 
     __tablename__ = "assignments"
 

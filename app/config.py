@@ -9,9 +9,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """All settings with their defaults. `DEADLINE_HOUR=10` in the environment overrides
-    `deadline_hour`, and so on."""
-
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str = "postgresql+asyncpg://a4:a4@localhost:5432/a4"
@@ -39,7 +36,7 @@ class Settings(BaseSettings):
     @field_validator("secret_key")
     @classmethod
     def secret_key_must_be_random(cls, value: str) -> str:
-        """Refuses to start with an empty, placeholder or short key."""
+        """`change-me…` is the placeholder from `.env.example`."""
         if len(value) < 32 or value.startswith("change-me"):
             raise ValueError(
                 "SECRET_KEY must be a random string of at least 32 characters, "
@@ -49,15 +46,13 @@ class Settings(BaseSettings):
 
     @cached_property
     def tz(self) -> ZoneInfo:
-        """The configured time zone; all dates and deadlines are in this zone."""
+        """All dates and deadlines are in this zone, not the server's."""
         return ZoneInfo(self.timezone)
 
     def now(self) -> datetime:
-        """The current time in the configured time zone."""
         return datetime.now(self.tz)
 
     def today(self) -> date:
-        """Today's date in the configured time zone (not the server's)."""
         return self.now().date()
 
 
