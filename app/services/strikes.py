@@ -73,9 +73,8 @@ async def next_free_penalty_week(session: AsyncSession, user_id: int, today: dat
         (a.start_date, a.end_date)
         for a in await session.scalars(select(AwayPeriod).where(AwayPeriod.user_id == user_id))
     ]
-    candidate = scheduling.Candidate(id=user_id, room="", away=tuple(away))
     week = scheduling.week_start(today) + timedelta(days=7)
-    while week in taken or not candidate.is_available(week, week + timedelta(days=6)):
+    while week in taken or scheduling.is_away_during(away, *scheduling.week_bounds(week)):
         week += timedelta(days=7)
     return week
 
@@ -97,12 +96,13 @@ async def check_threshold(session: AsyncSession, user_id: int, today: date) -> A
         return None
 
     week = await next_free_penalty_week(session, user_id, today)
+    start, end = scheduling.week_bounds(week)
     assignment = Assignment(user_id=user_id)
     session.add(
         Slot(
             duty=Duty.trash,
-            start_date=week,
-            end_date=week + timedelta(days=6),
+            start_date=start,
+            end_date=end,
             is_penalty=True,
             assignments=[assignment],
         )

@@ -63,8 +63,7 @@ class Candidate:
     away: tuple[tuple[date, date], ...] = ()
 
     def is_available(self, start: date, end: date) -> bool:
-        """True if no away period overlaps the days `start`..`end` (both included)."""
-        return not any(a_start <= end and start <= a_end for a_start, a_end in self.away)
+        return not is_away_during(self.away, start, end)
 
 
 @dataclass(frozen=True)
@@ -79,9 +78,20 @@ class Role:
     did_it: bool
 
 
+def is_away_during(away: Iterable[tuple[date, date]], start: date, end: date) -> bool:
+    """True if any away period overlaps the days `start`..`end` (both included)."""
+    return any(a_start <= end and start <= a_end for a_start, a_end in away)
+
+
 def week_start(d: date) -> date:
     """The Monday of `d`'s week."""
     return d - timedelta(days=d.weekday())
+
+
+def week_bounds(d: date) -> tuple[date, date]:
+    """Monday and Sunday of `d`'s week."""
+    start = week_start(d)
+    return start, start + timedelta(days=6)
 
 
 def room_key(room: str) -> tuple:

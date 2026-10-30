@@ -32,8 +32,7 @@ def slot_bounds(duty: Duty, day: date) -> tuple[date, date]:
     """First and last day of the slot containing `day`: the day itself, or its Mon-Sun week."""
     if duty is Duty.kitchen:
         return day, day
-    start = scheduling.week_start(day)
-    return start, start + timedelta(days=6)
+    return scheduling.week_bounds(day)
 
 
 def deadline(slot: Slot) -> datetime:
