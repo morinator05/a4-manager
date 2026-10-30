@@ -83,23 +83,23 @@ def is_away_during(away: Iterable[tuple[date, date]], start: date, end: date) ->
     return any(a_start <= end and start <= a_end for a_start, a_end in away)
 
 
-def week_start(d: date) -> date:
+def get_week_start(d: date) -> date:
     """The Monday of `d`'s week."""
     return d - timedelta(days=d.weekday())
 
 
-def week_bounds(d: date) -> tuple[date, date]:
+def get_week_bounds(d: date) -> tuple[date, date]:
     """Monday and Sunday of `d`'s week."""
-    start = week_start(d)
+    start = get_week_start(d)
     return start, start + timedelta(days=6)
 
 
-def room_key(room: str) -> tuple:
+def get_room_sort_key(room: str) -> tuple:
     """Natural sort: "A4.2" before "A4.10"."""
     return tuple(int(p) if p.isdigit() else p for p in re.split(r"(\d+)", room))
 
 
-def accrue(balances: dict[int, Balance], eligible: Iterable[int | None]) -> None:
+def accrue_expected_work(balances: dict[int, Balance], eligible: Iterable[int | None]) -> None:
     """Spread one job's worth of expected work over everybody available for it.
 
     `None` is someone who has moved out since: they still count for the size of the share,
@@ -114,7 +114,7 @@ def accrue(balances: dict[int, Balance], eligible: Iterable[int | None]) -> None
             balances.setdefault(uid, Balance()).expected += share
 
 
-def pick(
+def pick_most_indebted(
     balances: dict[int, Balance], eligible: Iterable[int], n: int, rooms: dict[int, str]
 ) -> list[int]:
     """Choose the `n` eligible users that owe the most. Does not modify balances."""
@@ -123,24 +123,24 @@ def pick(
         b = balances.get(uid, Balance())
         # Highest priority first; on a tie, whoever cleaned longest ago (never = first), then
         # by room, so the result is always the same for the same input.
-        return (-b.priority, b.last_done or date.min, room_key(rooms.get(uid, "")), uid)
+        return (-b.priority, b.last_done or date.min, get_room_sort_key(rooms.get(uid, "")), uid)
 
     return sorted(eligible, key=key)[:n]
 
 
-def credit(balances: dict[int, Balance], uid: int, on: date) -> None:
+def credit_done_job(balances: dict[int, Balance], uid: int, on: date) -> None:
     """Book one done job for `uid` on the slot starting `on`."""
     b = balances.setdefault(uid, Balance())
     b.credit += 1
     b.last_done = on if b.last_done is None else max(b.last_done, on)
 
 
-def reserve(balances: dict[int, Balance], uid: int, amount: Fraction) -> None:
+def reserve_open_share(balances: dict[int, Balance], uid: int, amount: Fraction) -> None:
     """Book `amount` of a not yet done job for `uid`."""
     balances.setdefault(uid, Balance()).pending += amount
 
 
-def _replace_by_roles(
+def _replace_members_with_roles(
     balances: dict[int, Balance],
     candidates: list[Candidate],
     start: date,
@@ -163,7 +163,7 @@ def _replace_by_roles(
     avg_expected = sum((b.expected for b in before), Fraction(0)) / len(before)
     avg_credit = sum((b.credit for b in before), Fraction(0)) / len(before)
     last_done = max((b.last_done for b in before if b.last_done), default=None)
-    room = min((c.room for c in members), key=room_key)
+    room = min((c.room for c in members), key=get_room_sort_key)
     away = tuple(period for c in members for period in c.away)
 
     result = [c for c in candidates if c.id not in ids]
@@ -179,7 +179,7 @@ def _replace_by_roles(
     return result
 
 
-def plan(
+def plan_upcoming_slots(
     balances: dict[int, Balance],
     candidates: list[Candidate],
     slots: list[tuple[date, date]],
@@ -202,15 +202,15 @@ def plan(
     balances = copy.deepcopy(balances)
     roles: dict[int, Role] = {}
     for start, member_ids in open_slots:
-        candidates = _replace_by_roles(balances, candidates, start, member_ids, roles)
+        candidates = _replace_members_with_roles(balances, candidates, start, member_ids, roles)
     rooms = {c.id: c.room for c in candidates}
     result = []
     for start, end in slots:
         eligible = [c.id for c in candidates if c.is_available(start, end)]
-        accrue(balances, eligible)
-        chosen = pick(balances, eligible, n, rooms)
+        accrue_expected_work(balances, eligible)
+        chosen = pick_most_indebted(balances, eligible, n, rooms)
         for uid in chosen:
-            reserve(balances, uid, Fraction(1, len(chosen)))
+            reserve_open_share(balances, uid, Fraction(1, len(chosen)))
         result.append([roles.get(uid, uid) for uid in chosen])
         candidates = [c for c in candidates if c.id not in roles or c.id not in chosen]
     return result

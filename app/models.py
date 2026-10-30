@@ -58,7 +58,7 @@ class Status(str, enum.Enum):
 
 
 class User(Base):
-    """A resident. Deleting a user means they moved out; see `services/users.delete`."""
+    """A resident. Deleting a user means they moved out; see `services/users.delete_user`."""
 
     __tablename__ = "users"
 

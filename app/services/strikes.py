@@ -10,12 +10,12 @@ from app.models import Assignment, AwayPeriod, Duty, Slot, Strike, User
 from app.services import scheduling
 
 
-async def for_assignment(session: AsyncSession, assignment_id: int) -> list[Strike]:
+async def get_strikes_for_assignment(session: AsyncSession, assignment_id: int) -> list[Strike]:
     """All strikes given for one duty, active or not."""
     return list(await session.scalars(select(Strike).where(Strike.assignment_id == assignment_id)))
 
 
-async def active_strikes(session: AsyncSession, user_id: int) -> list[Strike]:
+async def get_active_strikes(session: AsyncSession, user_id: int) -> list[Strike]:
     """The user's strikes that still count, oldest first."""
     return list(
         await session.scalars(
@@ -31,7 +31,7 @@ async def active_strikes(session: AsyncSession, user_id: int) -> list[Strike]:
     )
 
 
-async def issue(
+async def issue_strike(
     session: AsyncSession,
     *,
     user_id: int,
@@ -54,16 +54,16 @@ async def issue(
     )
     session.add(strike)
     await session.flush()
-    await check_threshold(session, user_id, today)
+    await check_strike_threshold(session, user_id, today)
     return strike
 
 
-async def revoke(session: AsyncSession, strike: Strike, now: datetime) -> None:
+async def revoke_strike(session: AsyncSession, strike: Strike, now: datetime) -> None:
     strike.revoked_at = now
     await session.flush()
 
 
-async def next_free_penalty_week(session: AsyncSession, user_id: int, today: date) -> date:
+async def find_free_penalty_week(session: AsyncSession, user_id: int, today: date) -> date:
     """First week after the current one without a trash slot where the user isn't away."""
     taken = set(
         await session.scalars(
@@ -74,26 +74,26 @@ async def next_free_penalty_week(session: AsyncSession, user_id: int, today: dat
         (a.start_date, a.end_date)
         for a in await session.scalars(select(AwayPeriod).where(AwayPeriod.user_id == user_id))
     ]
-    week = scheduling.week_start(today) + timedelta(days=7)
-    while week in taken or scheduling.is_away_during(away, *scheduling.week_bounds(week)):
+    week = scheduling.get_week_start(today) + timedelta(days=7)
+    while week in taken or scheduling.is_away_during(away, *scheduling.get_week_bounds(week)):
         week += timedelta(days=7)
     return week
 
 
-async def check_threshold(session: AsyncSession, user_id: int, today: date) -> None:
+async def check_strike_threshold(session: AsyncSession, user_id: int, today: date) -> None:
     """Turn `strike_threshold` active strikes into a penalty Mülldienst week.
 
     The penalty week replaces the regular Mülldienst of that week. The oldest strikes are
     marked as paid off by it, so they no longer count.
     """
-    active = await active_strikes(session, user_id)
+    active = await get_active_strikes(session, user_id)
     if len(active) < settings.strike_threshold:
         return
     if await session.get(User, user_id) is None:
         return
 
-    week = await next_free_penalty_week(session, user_id, today)
-    start, end = scheduling.week_bounds(week)
+    week = await find_free_penalty_week(session, user_id, today)
+    start, end = scheduling.get_week_bounds(week)
     assignment = Assignment(user_id=user_id)
     session.add(
         Slot(

@@ -35,7 +35,7 @@ class Settings(BaseSettings):
 
     @field_validator("secret_key")
     @classmethod
-    def secret_key_must_be_random(cls, value: str) -> str:
+    def validate_secret_key(cls, value: str) -> str:
         """`change-me…` is the placeholder from `.env.example`."""
         if len(value) < 32 or value.startswith("change-me"):
             raise ValueError(

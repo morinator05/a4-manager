@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "partials/macros.html" import slot_dates %}
 {% block content %}
-<h1>Verlauf {{ help_link("status") }}</h1>
+<h1>Verlauf {{ render_help_link("status") }}</h1>
 <p class="muted">{{ since|long_date }} bis {{ until|long_date }}</p>
 
 <form method="get" action="/history" class="row">
@@ -22,15 +22,15 @@
           {% if slot.is_penalty %}<span class="penalty">(Strafe)</span>{% endif %}</td>
       <td>
         {% for a in slot.assignments %}
-          <div class="assignee"><span>{{ person(a.user) }}</span> {% include "partials/status.html" %}</div>
+          <div class="assignee"><span>{{ render_person(a.user) }}</span> {% include "partials/status.html" %}</div>
         {% else %}<span class="muted">–</span>{% endfor %}
       </td>
       <td>
         {% set claim = claimed or disputed %}
         {% if claim %}
-          <strong>{{ person(claim.user) }}</strong>
+          <strong>{{ render_person(claim.user) }}</strong>
           <div class="muted">eingetragen {{ claim.completed_at|date_time }}
-            {% if claim.completed_by and claim.completed_by_id != claim.user_id %}durch {{ person(claim.completed_by) }}{% endif %}</div>
+            {% if claim.completed_by and claim.completed_by_id != claim.user_id %}durch {{ render_person(claim.completed_by) }}{% endif %}</div>
           {% if claim.disputed_at %}<div class="penalty">beanstandet {{ claim.disputed_at|date_time }}</div>{% endif %}
         {% else %}<span class="muted">niemand</span>{% endif %}
       </td>
@@ -38,7 +38,7 @@
         <td class="end">
           {% if claimed %}
             <form method="post" action="/admin/assignments/{{ claimed.id }}/dispute?next={{ ('/history?until=' ~ until)|urlencode }}" class="inline"
-                  hx-confirm="{{ display_name(claimed.user) }} hat eingetragen, aber nicht geputzt? Gibt einen Strike.">
+                  hx-confirm="{{ get_display_name(claimed.user) }} hat eingetragen, aber nicht geputzt? Gibt einen Strike.">
               <button class="danger">Beanstanden</button>
             </form>
           {% endif %}

@@ -8,22 +8,29 @@ from itertools import pairwise
 
 import pytest
 
-from app.services.scheduling import Candidate, Role, accrue, credit, plan, room_key
+from app.services.scheduling import (
+    Candidate,
+    Role,
+    accrue_expected_work,
+    credit_done_job,
+    get_room_sort_key,
+    plan_upcoming_slots,
+)
 
 START = date(2026, 1, 5)  # a Monday
 
 
-def days(n: int, start: date = START) -> list[tuple[date, date]]:
+def make_one_day_slots(n: int, start: date = START) -> list[tuple[date, date]]:
     """`n` one-day slots from `start`."""
     return [(start + timedelta(days=i),) * 2 for i in range(n)]
 
 
-def people(n: int) -> list[Candidate]:
+def make_candidates(n: int) -> list[Candidate]:
     """`n` candidates with ids 1..n, nobody away."""
     return [Candidate(id=i, room=f"A4.{i}") for i in range(1, n + 1)]
 
 
-def run(cands, n_days, start=START, miss_on=None, balances=None, claimer=None):
+def simulate_days(cands, n_days, start=START, miss_on=None, balances=None, claimer=None):
     """Day-by-day like the real system: one of the picked people claims the job.
 
     On `miss_on` nobody does it. Returns the balances, the picks and who did each day.
@@ -31,12 +38,12 @@ def run(cands, n_days, start=START, miss_on=None, balances=None, claimer=None):
     balances = {} if balances is None else balances
     claimer = claimer or (lambda picked: picked[0])
     picks, doers = [], []
-    for d, _ in days(n_days, start):
-        [picked] = plan(balances, cands, [(d, d)], 2)
-        accrue(balances, [c.id for c in cands if c.is_available(d, d)])
+    for d, _ in make_one_day_slots(n_days, start):
+        [picked] = plan_upcoming_slots(balances, cands, [(d, d)], 2)
+        accrue_expected_work(balances, [c.id for c in cands if c.is_available(d, d)])
         doer = None if d == miss_on or not picked else claimer(picked)
         if doer is not None:
-            credit(balances, doer, d)
+            credit_done_job(balances, doer, d)
         picks.append(picked)
         doers.append(doer)
     return balances, picks, doers
@@ -44,24 +51,24 @@ def run(cands, n_days, start=START, miss_on=None, balances=None, claimer=None):
 
 @pytest.mark.parametrize("n_people", [3, 7, 15, 30])
 def test_counts_stay_within_one(n_people):
-    result = plan({}, people(n_people), days(365), 2)
+    result = plan_upcoming_slots({}, make_candidates(n_people), make_one_day_slots(365), 2)
     counts = Counter(uid for picked in result for uid in picked)
     assert all(len(set(p)) == 2 for p in result)
     assert max(counts.values()) - min(counts.values()) <= 1
 
 
 def test_no_double_duty_on_consecutive_days():
-    result = plan({}, people(15), days(60), 2)
+    result = plan_upcoming_slots({}, make_candidates(15), make_one_day_slots(60), 2)
     for today, tomorrow in pairwise(result):
         assert not set(today) & set(tomorrow)
 
 
 def test_away_people_are_skipped_and_not_charged():
-    cands = people(15)
+    cands = make_candidates(15)
     away_start, away_end = START + timedelta(days=30), START + timedelta(days=89)
     cands[0] = replace(cands[0], away=((away_start, away_end),))
-    slots = days(180)
-    result = plan({}, cands, slots, 2)
+    slots = make_one_day_slots(180)
+    result = plan_upcoming_slots({}, cands, slots, 2)
 
     away_days = {d for d, _ in slots if away_start <= d <= away_end}
     for (d, _), picked in zip(slots, result, strict=True):
@@ -77,7 +84,7 @@ def test_away_people_are_skipped_and_not_charged():
 
 def test_done_counts_stay_even_with_random_claimer():
     rng = random.Random(42)
-    _, _, doers = run(people(15), 365, claimer=rng.choice)
+    _, _, doers = simulate_days(make_candidates(15), 365, claimer=rng.choice)
     counts = Counter(doers)
     assert len(counts) == 15
     assert max(counts.values()) - min(counts.values()) <= 1
@@ -86,11 +93,11 @@ def test_done_counts_stay_even_with_random_claimer():
 def test_lazy_person_is_picked_more_until_they_clean():
     lazy = 1
 
-    def claimer(picked):
+    def pick_claimer(picked):
         others = [p for p in picked if p != lazy]
         return others[0] if others else picked[0]
 
-    _, picks, doers = run(people(15), 120, claimer=claimer)
+    _, picks, doers = simulate_days(make_candidates(15), 120, claimer=pick_claimer)
     times_picked = Counter(uid for p in picks for uid in p)
     # Never cleaning means never getting credit, so they stay on the list every day.
     assert times_picked[lazy] == 120
@@ -99,38 +106,40 @@ def test_lazy_person_is_picked_more_until_they_clean():
 
 
 def test_missed_duty_comes_up_again_soon():
-    cands = people(15)
+    cands = make_candidates(15)
     miss_day = START + timedelta(days=20)
-    _, picks, _ = run(cands, 23, miss_on=miss_day)
+    _, picks, _ = simulate_days(cands, 23, miss_on=miss_day)
     missers = set(picks[20])
     assert missers <= set(picks[21]) | set(picks[22])
 
 
 def test_new_member_does_not_get_backlog():
-    cands = people(14)
-    balances, _, _ = run(cands, 70)
+    cands = make_candidates(14)
+    balances, _, _ = simulate_days(cands, 70)
     newbie = Candidate(id=99, room="A4.15")
-    _, picks, _ = run(cands + [newbie], 15, START + timedelta(days=70), balances=balances)
+    _, picks, _ = simulate_days(cands + [newbie], 15, START + timedelta(days=70), balances=balances)
     assert sum(99 in p for p in picks) <= 3
 
 
 def test_room_natural_sort():
-    assert sorted(["A4.10", "A4.2", "A4.1"], key=room_key) == ["A4.1", "A4.2", "A4.10"]
+    assert sorted(["A4.10", "A4.2", "A4.1"], key=get_room_sort_key) == ["A4.1", "A4.2", "A4.10"]
 
 
 def test_fewer_people_than_needed():
-    result = plan({}, people(1), days(3), 2)
+    result = plan_upcoming_slots({}, make_candidates(1), make_one_day_slots(3), 2)
     assert result == [[1], [1], [1]]
 
 
 def test_open_slot_people_become_roles():
-    cands = people(15)
-    balances, _, _ = run(cands, 30)
+    cands = make_candidates(15)
+    balances, _, _ = simulate_days(cands, 30)
     today = START + timedelta(days=30)
-    [pair] = plan(balances, cands, [(today, today)], 2)
-    accrue(balances, [c.id for c in cands])
+    [pair] = plan_upcoming_slots(balances, cands, [(today, today)], 2)
+    accrue_expected_work(balances, [c.id for c in cands])
 
-    result = plan(balances, cands, days(30, today + timedelta(days=1)), 2, [(today, pair)])
+    result = plan_upcoming_slots(
+        balances, cands, make_one_day_slots(30, today + timedelta(days=1)), 2, [(today, pair)]
+    )
     shown = [u for picked in result for u in picked]
     assert not set(pair) & set(shown)
     skipped, did = Role(today, False), Role(today, True)
@@ -141,28 +150,32 @@ def test_open_slot_people_become_roles():
 
 
 def test_fresh_start_non_cleaner_is_next():
-    cands = people(15)
+    cands = make_candidates(15)
     balances = {}
-    accrue(balances, [c.id for c in cands])
-    result = plan(balances, cands, days(14, START + timedelta(days=1)), 2, [(START, [1, 2])])
+    accrue_expected_work(balances, [c.id for c in cands])
+    result = plan_upcoming_slots(
+        balances, cands, make_one_day_slots(14, START + timedelta(days=1)), 2, [(START, [1, 2])]
+    )
     assert Role(START, False) in result[0]
     # The one who cleans owes the least, so they're not up again within two weeks.
     assert all(Role(START, True) not in picked for picked in result)
 
 
 def test_being_picked_without_cleaning_does_not_move_you_back():
-    cands = people(4)
+    cands = make_candidates(4)
     balances = {}
     for _ in range(2):
-        accrue(balances, [c.id for c in cands])
+        accrue_expected_work(balances, [c.id for c in cands])
     # Day 1: 1 and 2 on duty, 1 cleans. Day 2: 3 and 4, 3 cleans.
-    credit(balances, 1, START)
-    credit(balances, 3, START + timedelta(days=1))
+    credit_done_job(balances, 1, START)
+    credit_done_job(balances, 3, START + timedelta(days=1))
     # 2 and 4 owe the same; 2 wasn't pushed back by being on duty first.
-    [picked] = plan(balances, cands, days(1, START + timedelta(days=2)), 1)
+    [picked] = plan_upcoming_slots(
+        balances, cands, make_one_day_slots(1, START + timedelta(days=2)), 1
+    )
     assert picked == [2]
 
 
-def test_open_slot_with_one_person_is_kept():
-    result = plan({}, people(3), days(2), 1, [(START, [1])])
+def test_single_person_open_slot_gets_no_roles():
+    result = plan_upcoming_slots({}, make_candidates(3), make_one_day_slots(2), 1, [(START, [1])])
     assert all(isinstance(u, int) for picked in result for u in picked)

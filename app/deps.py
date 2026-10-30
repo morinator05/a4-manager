@@ -19,7 +19,7 @@ class LoginRequired(Exception):
     """Nobody is logged in; `main.py` turns this into a redirect to the login page."""
 
 
-async def optional_user(request: Request, session: Session) -> User | None:
+async def get_optional_user(request: Request, session: Session) -> User | None:
     """A login session of a since deleted user is cleared."""
     user_id = request.session.get("user_id")
     if user_id is None:
@@ -30,7 +30,7 @@ async def optional_user(request: Request, session: Session) -> User | None:
     return user
 
 
-async def require_user(user: Annotated[User | None, Depends(optional_user)]) -> User:
+async def require_user(user: Annotated[User | None, Depends(get_optional_user)]) -> User:
     if user is None:
         raise LoginRequired
     return user
@@ -42,6 +42,6 @@ async def require_admin(user: Annotated[User, Depends(require_user)]) -> User:
     return user
 
 
-OptionalUser = Annotated[User | None, Depends(optional_user)]
+OptionalUser = Annotated[User | None, Depends(get_optional_user)]
 CurrentUser = Annotated[User, Depends(require_user)]
 AdminUser = Annotated[User, Depends(require_admin)]

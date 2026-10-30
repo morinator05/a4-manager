@@ -16,7 +16,7 @@ log = logging.getLogger(__name__)
 DAILY_TICK_LOCK_ID = 4004
 
 
-async def daily_tick(session: AsyncSession, now: datetime) -> None:
+async def run_daily_tick(session: AsyncSession, now: datetime) -> None:
     """Strike overdue duties, then make sure today's and this week's people are picked.
 
     Safe to run any number of times; it also commits. Runs on a schedule, on startup,
@@ -24,14 +24,14 @@ async def daily_tick(session: AsyncSession, now: datetime) -> None:
     """
     # The scheduler, startup and page loads may run it at the same time.
     await session.execute(text("SELECT pg_advisory_xact_lock(:id)"), {"id": DAILY_TICK_LOCK_ID})
-    missed = await duties.process_overdue(session, now)
-    await duties.fill_current(session, now.date())
+    missed = await duties.process_overdue_duties(session, now)
+    await duties.fill_current_slots(session, now.date())
     await session.commit()
     if missed:
         log.info("Marked %d assignments as missed", len(missed))
 
 
-async def scheduled_tick() -> None:
-    """`daily_tick` with its own session, for the scheduler (no request around it)."""
+async def run_scheduled_tick() -> None:
+    """`run_daily_tick` with its own session, for the scheduler (no request around it)."""
     async with SessionLocal() as session:
-        await daily_tick(session, settings.now())
+        await run_daily_tick(session, settings.now())

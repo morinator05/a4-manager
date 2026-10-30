@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Statistik {{ help_link("schuld") }}</h1>
+<h1>Statistik {{ render_help_link("schuld") }}</h1>
 <div class="table-wrap"><table>
   <tr>
     <th>Name</th>
@@ -11,7 +11,7 @@
     {% set kb = balances[Duty.kitchen].get(u.id) %}
     {% set tb = balances[Duty.trash].get(u.id) %}
     <tr{% if not u.active %} class="muted"{% endif %}>
-      <td>{{ person(u) }}{% if not u.active %} (inaktiv){% endif %}</td>
+      <td>{{ render_person(u) }}{% if not u.active %} (inaktiv){% endif %}</td>
       <td>{{ counts.get((u.id, Duty.kitchen, Status.done), 0) }}</td>
       <td>{{ counts.get((u.id, Duty.kitchen, Status.missed), 0) }}</td>
       <td>{{ kb|debt }}</td>

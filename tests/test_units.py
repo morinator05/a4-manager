@@ -14,12 +14,12 @@ def test_display_name_uses_first_name_and_room():
 
 
 def test_room_numbers():
-    assert users.check_room(" a403 ") == "A403"
+    assert users.normalize_room(" a403 ") == "A403"
     for valid in ["A401", "A499", "B110"]:
-        assert users.check_room(valid) == valid
+        assert users.normalize_room(valid) == valid
     for invalid in ["A40", "A400", "A.421", "A4.1", "A4100", "4403", "AA403", ""]:
         with pytest.raises(UserError):
-            users.check_room(invalid)
+            users.normalize_room(invalid)
 
 
 def test_login_throttle_window():
@@ -31,5 +31,5 @@ def test_login_throttle_window():
     now[0] = 61
     assert not throttle.is_blocked("k")
     throttle.record_failure("k")
-    throttle.reset("k")
+    throttle.reset_failures("k")
     assert not throttle.is_blocked("k")

@@ -18,7 +18,7 @@ async def main() -> None:
     password = getpass.getpass("Passwort: ")
     async with SessionLocal() as session:
         try:
-            user = await users.create(
+            user = await users.create_user(
                 session,
                 name=name,
                 room_number=room,

@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% from "partials/macros.html" import slot_dates %}
 {% block content %}
-<h1>{{ person(user) }}</h1>
+<h1>{{ render_person(user) }}</h1>
 {% if not user.active %}<p class="flash error">Du bist inaktiv und wirst nicht eingeteilt.</p>{% endif %}
 
 <div class="grid">
   <section class="card">
-    <h2>Abwesenheit {{ help_link("abwesend") }}</h2>
+    <h2>Abwesenheit {{ render_help_link("abwesend") }}</h2>
     <form method="post" action="/me/away" class="row">
       <label>Von <input type="date" name="start_date" value="{{ today }}" required></label>
       <label>Bis <input type="date" name="end_date" required></label>
@@ -33,7 +33,7 @@
 </div>
 
 {% set active = strikes|selectattr("is_active")|list %}
-<h2>Strikes {{ help_link("strikes") }} <span class="muted">{{ active|length }} aktiv</span></h2>
+<h2>Strikes {{ render_help_link("strikes") }} <span class="muted">{{ active|length }} aktiv</span></h2>
 <div class="table-wrap"><table>
   <tr><th>Datum</th><th>Grund</th><th class="end">Status</th></tr>
   {% for s in strikes %}

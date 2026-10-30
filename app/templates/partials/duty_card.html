@@ -13,7 +13,7 @@
   {% else %}
     {% for a in slot.assignments %}
       <div class="person">
-        <div class="name">{{ person(a.user) }}</div>
+        <div class="name">{{ render_person(a.user) }}</div>
         {% if can_mark(a) %}
           <button hx-post="/assignments/{{ a.id }}/done?card=1"
                   hx-target="#card-{{ duty.value }}" hx-swap="outerHTML">Erledigt</button>
@@ -24,7 +24,7 @@
     {% endfor %}
     {% set claimed = slot.claimed_assignment %}
     {% if claimed %}
-      <p class="muted">Erledigt von {{ person(claimed.user) }}
+      <p class="muted">Erledigt von {{ render_person(claimed.user) }}
         am {{ claimed.completed_at|date_time }}</p>
     {% else %}
       <p class="muted">Eintragen bis {{ deadline|date_time }}</p>

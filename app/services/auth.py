@@ -28,7 +28,7 @@ def verify_password(password: str, password_hash: str) -> bool:
     return _hasher.verify(password, password_hash)
 
 
-async def authenticate(session: AsyncSession, username: str, password: str) -> User | None:
+async def authenticate_user(session: AsyncSession, username: str, password: str) -> User | None:
     """The user with these credentials, or None."""
     user = await session.scalar(select(User).where(User.username == normalize_username(username)))
     if user is None:

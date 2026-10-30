@@ -25,7 +25,7 @@ class UserError(Exception):
 ROOM_PATTERN = re.compile(r"[A-Z][0-9](0[1-9]|[1-9][0-9])")
 
 
-def check_room(room_number: str) -> str:
+def normalize_room(room_number: str) -> str:
     room_number = room_number.strip().upper()
     if not ROOM_PATTERN.fullmatch(room_number):
         raise UserError(
@@ -36,10 +36,10 @@ def check_room(room_number: str) -> str:
 
 async def list_users(session: AsyncSession) -> list[User]:
     users = await session.scalars(select(User))
-    return sorted(users, key=lambda u: scheduling.room_key(u.room_number))
+    return sorted(users, key=lambda u: scheduling.get_room_sort_key(u.room_number))
 
 
-async def create(
+async def create_user(
     session: AsyncSession,
     *,
     name: str,
@@ -53,7 +53,7 @@ async def create(
     username = normalize_username(username)
     if not (name and room_number.strip() and username and password):
         raise UserError("Alle Felder müssen ausgefüllt sein")
-    room_number = check_room(room_number)
+    room_number = normalize_room(room_number)
     if len(password) < MIN_PASSWORD_LENGTH:
         raise UserError(PASSWORD_TOO_SHORT)
     if await session.scalar(select(User).where(User.username == username)):
@@ -80,7 +80,7 @@ async def create_initial_admin(session: AsyncSession) -> User | None:
         return None
     if await session.scalar(select(User.id).limit(1)) is not None:
         return None
-    return await create(
+    return await create_user(
         session,
         name=settings.admin_name,
         room_number=settings.admin_room,
@@ -90,17 +90,17 @@ async def create_initial_admin(session: AsyncSession) -> User | None:
     )
 
 
-async def set_active(session: AsyncSession, user: User, active: bool, today: date) -> None:
+async def set_user_active(session: AsyncSession, user: User, active: bool, today: date) -> None:
     """Pause or resume a resident. A paused resident's open duties go to someone else."""
     user.active = active
     await session.flush()
     if active:
-        await duties.fill_current(session, today)
+        await duties.fill_current_slots(session, today)
     else:
-        await duties.reconcile(session, today)
+        await duties.replace_unavailable_people(session, today)
 
 
-async def delete(session: AsyncSession, user: User, today: date) -> None:
+async def delete_user(session: AsyncSession, user: User, today: date) -> None:
     """Moving out. The history stays, anonymised; whoever moves in next is a new user and
     starts from zero (no debt, no strikes). Their open duties go to someone else.
     """
@@ -121,11 +121,13 @@ async def delete(session: AsyncSession, user: User, today: date) -> None:
     await session.flush()
     # The database's ON DELETE rules changed rows the session still holds; reload them.
     session.expire_all()
-    await duties.reconcile(session, today)
-    await duties.fill_current(session, today)
+    await duties.replace_unavailable_people(session, today)
+    await duties.fill_current_slots(session, today)
 
 
-async def add_away(session: AsyncSession, user: User, start: date, end: date, today: date) -> None:
+async def add_away_period(
+    session: AsyncSession, user: User, start: date, end: date, today: date
+) -> None:
     """Mark a resident away from `start` to `end`; open duties in that time are reassigned."""
     if end < start:
         raise UserError("Das Ende muss nach dem Anfang liegen")
@@ -135,10 +137,10 @@ async def add_away(session: AsyncSession, user: User, start: date, end: date, to
     await session.flush()
     # `user.away_periods` may already be loaded without the new period; reload it.
     session.expire_all()
-    await duties.reconcile(session, today)
+    await duties.replace_unavailable_people(session, today)
 
 
-async def remove_away(session: AsyncSession, away: AwayPeriod) -> None:
+async def remove_away_period(session: AsyncSession, away: AwayPeriod) -> None:
     """Delete an away period. Duties already reassigned stay with their new people."""
     await session.delete(away)
     await session.flush()

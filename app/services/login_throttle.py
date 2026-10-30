@@ -29,15 +29,15 @@ class LoginThrottle:
         self._failures: dict[str, list[float]] = {}
 
     def is_blocked(self, key: str) -> bool:
-        return len(self._recent_failures(key)) >= self._max_failures
+        return len(self._get_recent_failures(key)) >= self._max_failures
 
     def record_failure(self, key: str) -> None:
         self._failures.setdefault(key, []).append(self._clock())
 
-    def reset(self, key: str) -> None:
+    def reset_failures(self, key: str) -> None:
         self._failures.pop(key, None)
 
-    def _recent_failures(self, key: str) -> list[float]:
+    def _get_recent_failures(self, key: str) -> list[float]:
         """Failures inside the window; older ones are dropped so memory doesn't grow."""
         cutoff = self._clock() - self._window_seconds
         recent = [t for t in self._failures.get(key, []) if t > cutoff]

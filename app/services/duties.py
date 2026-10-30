@@ -22,17 +22,17 @@ class DutyError(Exception):
     """An action on a duty isn't allowed; the message is German and shown as is."""
 
 
-def people_per_slot(duty: Duty) -> int:
+def get_people_per_slot(duty: Duty) -> int:
     if duty is Duty.kitchen:
         return settings.kitchen_people_per_day
     return settings.trash_people_per_week
 
 
-def slot_bounds(duty: Duty, day: date) -> tuple[date, date]:
+def get_slot_bounds(duty: Duty, day: date) -> tuple[date, date]:
     """First and last day of the slot containing `day`: the day itself, or its Mon-Sun week."""
     if duty is Duty.kitchen:
         return day, day
-    return scheduling.week_bounds(day)
+    return scheduling.get_week_bounds(day)
 
 
 def describe_slot(slot: Slot) -> str:
@@ -40,7 +40,7 @@ def describe_slot(slot: Slot) -> str:
     return f"{slot.duty.label} am {slot.start_date:%d.%m.%Y}"
 
 
-def deadline(slot: Slot) -> datetime:
+def get_deadline(slot: Slot) -> datetime:
     """Until when the slot can be marked done; after that it counts as missed."""
     day = slot.end_date + timedelta(days=settings.deadline_days_after)
     return datetime.combine(day, time(settings.deadline_hour), settings.tz)
@@ -65,7 +65,7 @@ def earns_credit(slot: Slot, a: Assignment) -> bool:
     return not slot.is_penalty and a.status is Status.done
 
 
-def slot_pending(slot: Slot, a: Assignment) -> Fraction:
+def get_pending_share(slot: Slot, a: Assignment) -> Fraction:
     """While nobody has marked a slot done, its pending people share the job.
 
     Counts only for picking (`Balance.pending`), so tomorrow's pick doesn't choose them
@@ -94,19 +94,19 @@ async def load_balances(session: AsyncSession, duty: Duty) -> dict[int, Balance]
     ).all()
     for slot in slots:
         if not slot.is_penalty:
-            scheduling.accrue(balances, [e.user_id for e in slot.eligible])
+            scheduling.accrue_expected_work(balances, [e.user_id for e in slot.eligible])
         for a in slot.assignments:
             if a.user_id is None:
                 continue
             if earns_credit(slot, a):
-                scheduling.credit(balances, a.user_id, slot.start_date)
-            scheduling.reserve(balances, a.user_id, slot_pending(slot, a))
+                scheduling.credit_done_job(balances, a.user_id, slot.start_date)
+            scheduling.reserve_open_share(balances, a.user_id, get_pending_share(slot, a))
     return balances
 
 
 async def get_slot(session: AsyncSession, duty: Duty, day: date) -> Slot | None:
     """The slot containing `day`, with its people loaded, or None if not created yet."""
-    start, _ = slot_bounds(duty, day)
+    start, _ = get_slot_bounds(duty, day)
     return await session.scalar(
         select(Slot)
         .where(Slot.duty == duty, Slot.start_date == start)
@@ -114,29 +114,29 @@ async def get_slot(session: AsyncSession, duty: Duty, day: date) -> Slot | None:
     )
 
 
-async def materialize(session: AsyncSession, duty: Duty, day: date) -> Slot:
+async def materialize_slot(session: AsyncSession, duty: Duty, day: date) -> Slot:
     """Create the slot containing `day` and pick its people.
 
     An existing slot that has fewer people than needed (e.g. it was created before
     enough residents existed) is topped up.
     """
     existing = await get_slot(session, duty, day)
-    n = people_per_slot(duty)
+    n = get_people_per_slot(duty)
     if existing is not None:
         is_claimed = existing.claimed_assignment is not None
         if existing.is_penalty or is_claimed or len(existing.assignments) >= n:
             return existing
-        await _top_up(session, existing, n - len(existing.assignments))
+        await _top_up_slot(session, existing, n - len(existing.assignments))
         return await get_slot(session, duty, day)
 
-    start, end = slot_bounds(duty, day)
+    start, end = get_slot_bounds(duty, day)
     candidates = await load_candidates(session)
     rooms = {c.id: c.room for c in candidates}
     eligible = [c.id for c in candidates if c.is_available(start, end)]
 
     balances = await load_balances(session, duty)
-    scheduling.accrue(balances, eligible)
-    chosen = scheduling.pick(balances, eligible, n, rooms)
+    scheduling.accrue_expected_work(balances, eligible)
+    chosen = scheduling.pick_most_indebted(balances, eligible, n, rooms)
 
     slot = Slot(duty=duty, start_date=start, end_date=end, is_penalty=False)
     slot.eligible = [SlotEligible(user_id=uid) for uid in eligible]
@@ -146,7 +146,7 @@ async def materialize(session: AsyncSession, duty: Duty, day: date) -> Slot:
     return await get_slot(session, duty, day)
 
 
-async def _top_up(session: AsyncSession, slot: Slot, missing: int) -> None:
+async def _top_up_slot(session: AsyncSession, slot: Slot, missing: int) -> None:
     """Add `missing` people to an existing slot, including residents added since."""
     candidates = await load_candidates(session)
     # `get_slot` doesn't load `eligible`, and async code can't load it lazily.
@@ -166,18 +166,18 @@ async def _assign_from_eligible(
     balances = await load_balances(session, slot.duty)
     taken = {a.user_id for a in slot.assignments}
     pool = [e.user_id for e in slot.eligible if e.user_id is not None and e.user_id not in taken]
-    for uid in scheduling.pick(balances, pool, count, rooms):
+    for uid in scheduling.pick_most_indebted(balances, pool, count, rooms):
         slot.assignments.append(Assignment(user_id=uid))
     await session.flush()
 
 
-async def fill_current(session: AsyncSession, today: date) -> None:
+async def fill_current_slots(session: AsyncSession, today: date) -> None:
     """Make sure today's kitchen duty and this week's trash duty have their people."""
     for duty in Duty:
-        await materialize(session, duty, today)
+        await materialize_slot(session, duty, today)
 
 
-async def reconcile(session: AsyncSession, today: date) -> None:
+async def replace_unavailable_people(session: AsyncSession, today: date) -> None:
     """Replace people in current/upcoming slots who became unavailable.
 
     Called after someone marks themselves away, is deactivated or deleted.
@@ -212,7 +212,7 @@ async def reconcile(session: AsyncSession, today: date) -> None:
         await _assign_from_eligible(session, slot, len(gone), rooms)
 
 
-async def process_overdue(session: AsyncSession, now: datetime) -> list[Assignment]:
+async def process_overdue_duties(session: AsyncSession, now: datetime) -> list[Assignment]:
     """Mark pending duties past their deadline as missed and strike the assignees."""
     pending = (
         await session.scalars(
@@ -221,11 +221,11 @@ async def process_overdue(session: AsyncSession, now: datetime) -> list[Assignme
             .options(selectinload(Assignment.slot))
         )
     ).all()
-    missed = [a for a in pending if deadline(a.slot) <= now]
+    missed = [a for a in pending if get_deadline(a.slot) <= now]
     for a in missed:
         a.status = Status.missed
         if a.user_id is not None:
-            await strikes.issue(
+            await strikes.issue_strike(
                 session,
                 user_id=a.user_id,
                 reason=f"{describe_slot(a.slot)} nicht eingetragen",
@@ -265,19 +265,19 @@ def can_mark_done(a: Assignment, actor: User, now: datetime) -> bool:
         return True
     if a.status is not Status.pending:
         return False
-    if not (a.slot.start_date <= now.date() and now < deadline(a.slot)):
+    if not (a.slot.start_date <= now.date() and now < get_deadline(a.slot)):
         return False
     return a.user_id == actor.id
 
 
 async def _revoke_strikes(session: AsyncSession, a: Assignment, now: datetime) -> None:
     """Take back the strikes given for this duty (it was done or excused after all)."""
-    for s in await strikes.for_assignment(session, a.id):
+    for s in await strikes.get_strikes_for_assignment(session, a.id):
         if s.is_active:
             s.revoked_at = now
 
 
-async def mark_done(session: AsyncSession, a: Assignment, actor: User, now: datetime) -> None:
+async def mark_duty_done(session: AsyncSession, a: Assignment, actor: User, now: datetime) -> None:
     """`a`'s person claims the slot; everybody else on it is off the hook.
 
     Also revokes strikes already given for the slot (the Flursprecher may mark it done
@@ -297,7 +297,7 @@ async def mark_done(session: AsyncSession, a: Assignment, actor: User, now: date
     await session.flush()
 
 
-async def excuse(session: AsyncSession, a: Assignment, actor: User, now: datetime) -> None:
+async def excuse_duty(session: AsyncSession, a: Assignment, actor: User, now: datetime) -> None:
     """Admin only: nobody is blamed, but the person gets no credit either."""
     if not actor.is_admin:
         raise DutyError("Nur der Flursprecher kann Dienste entschuldigen")
@@ -308,7 +308,7 @@ async def excuse(session: AsyncSession, a: Assignment, actor: User, now: datetim
     await session.flush()
 
 
-async def dispute(session: AsyncSession, a: Assignment, actor: User, now: datetime) -> None:
+async def dispute_duty(session: AsyncSession, a: Assignment, actor: User, now: datetime) -> None:
     """Admin only: it was marked done but not actually done. The claimer gets a strike.
 
     The claimer loses the credit; the partner stays "covered" and gets nothing.
@@ -321,7 +321,7 @@ async def dispute(session: AsyncSession, a: Assignment, actor: User, now: dateti
     a.disputed_at = now
     await session.flush()
     if a.user_id is not None:
-        await strikes.issue(
+        await strikes.issue_strike(
             session,
             user_id=a.user_id,
             reason=f"{describe_slot(a.slot)} als erledigt eingetragen, aber nicht gemacht",
@@ -342,17 +342,20 @@ class PreviewEntry:
     is_penalty: bool = False
 
 
-async def preview(session: AsyncSession, duty: Duty, start: date, end: date) -> list[PreviewEntry]:
+async def build_preview(
+    session: AsyncSession, duty: Duty, start: date, end: date
+) -> list[PreviewEntry]:
     """Expected schedule for the slots starting between `start` and `end`.
 
     Slots that already exist (e.g. penalty weeks) are shown as they are; the others are
-    simulated with `scheduling.plan`. The people on earlier slots that nobody has marked
-    done yet (e.g. today's kitchen pair) show up as "did it" / "didn't do it" `Role`s.
+    simulated with `scheduling.plan_upcoming_slots`. The people on earlier slots that nobody
+    has marked done yet (e.g. today's kitchen pair) show up as "did it" / "didn't do it"
+    `Role`s.
     """
-    n = people_per_slot(duty)
+    n = get_people_per_slot(duty)
     step = timedelta(days=1 if duty is Duty.kitchen else 7)
     # Trash weeks start on Monday: skip the week that is already running on `start`.
-    first, _ = slot_bounds(duty, start)
+    first, _ = get_slot_bounds(duty, start)
     if first < start:
         first += step
 
@@ -368,7 +371,7 @@ async def preview(session: AsyncSession, duty: Duty, start: date, end: date) -> 
     to_simulate: list[PreviewEntry] = []
     day = first
     while day <= end:
-        slot_start, slot_end = slot_bounds(duty, day)
+        slot_start, slot_end = get_slot_bounds(duty, day)
         if day in existing:
             s = existing[day]
             entry = PreviewEntry(
@@ -399,7 +402,7 @@ async def preview(session: AsyncSession, duty: Duty, start: date, end: date) -> 
         if s.claimed_assignment is None
     ]
 
-    planned = scheduling.plan(
+    planned = scheduling.plan_upcoming_slots(
         await load_balances(session, duty),
         await load_candidates(session),
         [(e.start, e.end) for e in to_simulate],
