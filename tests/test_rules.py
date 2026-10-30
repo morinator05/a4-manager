@@ -46,9 +46,9 @@ async def make_users(session, n=15, admin=True):
     return created
 
 
-async def get_kitchen_pair(session, day=MONDAY):
+async def assign_kitchen_pair(session, day=MONDAY):
     """Run the daily job for `day`; returns the two kitchen assignments and their people."""
-    await jobs.run_daily_tick(session, make_datetime(day))
+    await jobs.run_daily_job(session, make_datetime(day))
     kitchen = await duties.get_slot(session, Duty.kitchen, day)
     # Loaded like the app does, with `.slot`, so `mark_duty_done` never has to load it lazily:
     # that fails in async code and made this helper's tests fail now and then.
@@ -71,9 +71,9 @@ async def log_in(client, username):
     assert r.status_code == 303
 
 
-async def test_tick_assigns_kitchen_and_trash(session):
+async def test_daily_job_assigns_kitchen_and_trash(session):
     await make_users(session)
-    await jobs.run_daily_tick(session, make_datetime(MONDAY))
+    await jobs.run_daily_job(session, make_datetime(MONDAY))
     kitchen = await duties.get_slot(session, Duty.kitchen, MONDAY)
     trash = await duties.get_slot(session, Duty.trash, MONDAY + timedelta(days=3))
     assert len(kitchen.assignments) == 2
@@ -81,21 +81,21 @@ async def test_tick_assigns_kitchen_and_trash(session):
     assert trash.start_date == MONDAY and trash.end_date == MONDAY + timedelta(days=6)
 
     # Idempotent.
-    await jobs.run_daily_tick(session, make_datetime(MONDAY, 13))
+    await jobs.run_daily_job(session, make_datetime(MONDAY, 13))
     assert len((await session.scalars(select(Slot))).all()) == 2
 
 
 async def test_missed_kitchen_strikes_both(session):
     await make_users(session)
-    await jobs.run_daily_tick(session, make_datetime(MONDAY))
+    await jobs.run_daily_job(session, make_datetime(MONDAY))
     kitchen = await duties.get_slot(session, Duty.kitchen, MONDAY)
     picked = [a.user_id for a in kitchen.assignments]
 
     # Before the deadline (next day 12:00) nothing happens.
-    await jobs.run_daily_tick(session, make_datetime(MONDAY + timedelta(days=1), 11))
+    await jobs.run_daily_job(session, make_datetime(MONDAY + timedelta(days=1), 11))
     assert all(a.status is Status.pending for a in kitchen.assignments)
 
-    await jobs.run_daily_tick(session, make_datetime(MONDAY + timedelta(days=1), 12))
+    await jobs.run_daily_job(session, make_datetime(MONDAY + timedelta(days=1), 12))
     await session.refresh(kitchen, ["assignments"])
     assert all(a.status is Status.missed for a in kitchen.assignments)
     for uid in picked:
@@ -105,7 +105,7 @@ async def test_missed_kitchen_strikes_both(session):
 async def test_three_strikes_give_penalty_in_next_free_week(session):
     people = await make_users(session)
     admin, a, b = people[:3]
-    await jobs.run_daily_tick(session, make_datetime(MONDAY))
+    await jobs.run_daily_job(session, make_datetime(MONDAY))
     for user in (a, b):
         for _ in range(3):
             await strikes.issue_strike(
@@ -125,7 +125,7 @@ async def test_three_strikes_give_penalty_in_next_free_week(session):
     assert len(await strikes.get_active_strikes(session, a.id)) == 0
 
     # The penalty week replaces the regular Mülldienst.
-    await jobs.run_daily_tick(session, make_datetime(MONDAY + timedelta(days=7)))
+    await jobs.run_daily_job(session, make_datetime(MONDAY + timedelta(days=7)))
     slot = await duties.get_slot(session, Duty.trash, MONDAY + timedelta(days=7))
     assert slot.is_penalty and [x.user_id for x in slot.assignments] == [a.id]
 
@@ -144,7 +144,7 @@ async def test_mark_done_permissions(session):
     admin = people[0]
     # Keep the admin off today's duty, so the outsider/admin checks are meaningful.
     await users.add_away_period(session, admin, MONDAY, MONDAY + timedelta(days=1), MONDAY)
-    first, second, p1, p2 = await get_kitchen_pair(session)
+    first, second, p1, p2 = await assign_kitchen_pair(session)
     outsider = next(p for p in people if p.id not in {p1.id, p2.id} and not p.is_admin)
 
     with pytest.raises(DutyError):
@@ -155,7 +155,7 @@ async def test_mark_done_permissions(session):
 
     # Too late for a resident, but the Flursprecher can still do it.
     tuesday = MONDAY + timedelta(days=1)
-    t_first, _, t1, _ = await get_kitchen_pair(session, tuesday)
+    t_first, _, t1, _ = await assign_kitchen_pair(session, tuesday)
     with pytest.raises(DutyError):
         await duties.mark_duty_done(
             session, t_first, t1, make_datetime(tuesday + timedelta(days=1), 12)
@@ -168,7 +168,7 @@ async def test_mark_done_permissions(session):
 
 async def test_first_claim_closes_the_slot(session):
     await make_users(session)
-    first, second, p1, p2 = await get_kitchen_pair(session)
+    first, second, p1, p2 = await assign_kitchen_pair(session)
 
     await duties.mark_duty_done(session, second, p2, make_datetime(MONDAY, 20))
     assert second.status is Status.done and second.completed_by_id == p2.id
@@ -180,16 +180,16 @@ async def test_first_claim_closes_the_slot(session):
     # Only the one who cleaned gets credit; the partner gets neither credit nor strike.
     balances = await duties.load_balances(session, Duty.kitchen)
     assert balances[p2.id].credit == 1 and balances[p1.id].credit == 0
-    await jobs.run_daily_tick(session, make_datetime(MONDAY + timedelta(days=2)))
+    await jobs.run_daily_job(session, make_datetime(MONDAY + timedelta(days=2)))
     assert await strikes.get_active_strikes(session, p1.id) == []
 
 
 async def test_open_slot_is_shared_for_picking_but_not_for_debt(session):
     await make_users(session)
-    _, _, p1, p2 = await get_kitchen_pair(session)
+    _, _, p1, p2 = await assign_kitchen_pair(session)
     balances = await duties.load_balances(session, Duty.kitchen)
     assert balances[p1.id].pending == balances[p2.id].pending == Fraction(1, 2)
-    # The debt shown only changes once someone marks it done.
+    # An open slot counts only for picking: nobody gets credit before it's marked done.
     assert balances[p1.id].credit == balances[p2.id].credit == 0
 
     # Tomorrow is picked before anyone marked today done; today's pair isn't picked again.
@@ -199,7 +199,7 @@ async def test_open_slot_is_shared_for_picking_but_not_for_debt(session):
 
 async def test_preview_shows_open_pair_as_roles(session):
     await make_users(session)
-    first, _, p1, p2 = await get_kitchen_pair(session)
+    first, _, p1, p2 = await assign_kitchen_pair(session)
 
     async def get_shown():
         """The user ids and roles the kitchen preview shows for the next 30 days."""
@@ -223,7 +223,7 @@ async def test_preview_shows_open_pair_as_roles(session):
 
 async def test_partner_who_did_not_clean_is_picked_next(session):
     await make_users(session)
-    first, _, p1, p2 = await get_kitchen_pair(session)
+    first, _, p1, p2 = await assign_kitchen_pair(session)
     await duties.mark_duty_done(session, first, p1, make_datetime(MONDAY, 20))
     tomorrow = await duties.materialize_slot(session, Duty.kitchen, MONDAY + timedelta(days=1))
     ids = {a.user_id for a in tomorrow.assignments}
@@ -234,7 +234,7 @@ async def test_dispute_gives_strike_and_removes_credit(session):
     people = await make_users(session)
     admin = people[0]
     await users.add_away_period(session, admin, MONDAY, MONDAY, MONDAY)
-    first, second, p1, p2 = await get_kitchen_pair(session)
+    first, second, p1, p2 = await assign_kitchen_pair(session)
     await duties.mark_duty_done(session, first, p1, make_datetime(MONDAY, 20))
 
     with pytest.raises(DutyError):
@@ -249,15 +249,15 @@ async def test_dispute_gives_strike_and_removes_credit(session):
     balances = await duties.load_balances(session, Duty.kitchen)
     assert balances[p1.id].credit == 0
     # The deadline passing later doesn't add a second strike.
-    await jobs.run_daily_tick(session, make_datetime(MONDAY + timedelta(days=2)))
+    await jobs.run_daily_job(session, make_datetime(MONDAY + timedelta(days=2)))
     assert len(await strikes.get_active_strikes(session, p1.id)) == 1
 
 
 async def test_admin_marking_missed_done_revokes_strike(session):
     people = await make_users(session)
     admin = people[0]
-    await jobs.run_daily_tick(session, make_datetime(MONDAY))
-    await jobs.run_daily_tick(session, make_datetime(MONDAY + timedelta(days=1), 13))
+    await jobs.run_daily_job(session, make_datetime(MONDAY))
+    await jobs.run_daily_job(session, make_datetime(MONDAY + timedelta(days=1), 13))
     kitchen = await duties.get_slot(session, Duty.kitchen, MONDAY)
     a = await duties.get_assignment(session, kitchen.assignments[0].id)
     assert a.status is Status.missed
@@ -267,7 +267,7 @@ async def test_admin_marking_missed_done_revokes_strike(session):
 
 async def test_away_replaces_pending_assignment(session):
     await make_users(session)
-    await jobs.run_daily_tick(session, make_datetime(MONDAY))
+    await jobs.run_daily_job(session, make_datetime(MONDAY))
     kitchen = await duties.get_slot(session, Duty.kitchen, MONDAY)
     leaving = kitchen.assignments[0].user
     leaving_id = leaving.id
@@ -286,7 +286,7 @@ async def test_away_replaces_pending_assignment(session):
 
 async def test_delete_user_keeps_history_and_replaces(session):
     await make_users(session)
-    await jobs.run_daily_tick(session, make_datetime(MONDAY))
+    await jobs.run_daily_job(session, make_datetime(MONDAY))
     trash = await duties.get_slot(session, Duty.trash, MONDAY)
     gone = trash.assignments[0].user
     gone_id = gone.id
@@ -297,13 +297,13 @@ async def test_delete_user_keeps_history_and_replaces(session):
     assert len(trash.assignments) == 1
 
 
-async def test_month_of_ticks_is_fair(session):
+async def test_month_of_daily_jobs_is_fair(session):
     """30 days, one random person of each pair cleans: everybody cleans 2 times."""
     rng = random.Random(7)
     await make_users(session)
     day = MONDAY
     for _ in range(30):
-        await jobs.run_daily_tick(session, make_datetime(day))
+        await jobs.run_daily_job(session, make_datetime(day))
         slot = await duties.get_slot(session, Duty.kitchen, day)
         claim = await duties.get_assignment(session, rng.choice(slot.assignments).id)
         await duties.mark_duty_done(session, claim, claim.user, make_datetime(day, 20))
@@ -354,19 +354,19 @@ async def test_help_page(session, client):
 
 
 async def test_understaffed_slot_is_topped_up(session):
-    # The tick ran before anyone lived on the floor.
-    await jobs.run_daily_tick(session, make_datetime(MONDAY))
+    # The daily job ran before anyone lived on the floor.
+    await jobs.run_daily_job(session, make_datetime(MONDAY))
     assert (await duties.get_slot(session, Duty.kitchen, MONDAY)).assignments == []
 
     await make_users(session, n=5)
-    await jobs.run_daily_tick(session, make_datetime(MONDAY, 10))
+    await jobs.run_daily_job(session, make_datetime(MONDAY, 10))
     assert len((await duties.get_slot(session, Duty.kitchen, MONDAY)).assignments) == 2
     assert len((await duties.get_slot(session, Duty.trash, MONDAY)).assignments) == 1
 
 
 async def test_history_page_and_dispute(session, client):
     await make_users(session, n=4)
-    first, _, p1, _ = await get_kitchen_pair(session, settings.today())
+    first, _, p1, _ = await assign_kitchen_pair(session, settings.today())
     await duties.mark_duty_done(session, first, p1, settings.now())
     await session.commit()
 
@@ -392,7 +392,7 @@ async def test_history_page_and_dispute(session, client):
 async def test_top_up_skips_slot_that_is_already_done(session):
     # Only one resident: they get today's kitchen duty alone and do it.
     [first] = await make_users(session, n=1)
-    await jobs.run_daily_tick(session, make_datetime(MONDAY))
+    await jobs.run_daily_job(session, make_datetime(MONDAY))
     kitchen = await duties.get_slot(session, Duty.kitchen, MONDAY)
     a = await duties.get_assignment(session, kitchen.assignments[0].id)
     await duties.mark_duty_done(session, a, first, make_datetime(MONDAY, 10))
@@ -407,13 +407,13 @@ async def test_top_up_skips_slot_that_is_already_done(session):
     kitchen = await duties.get_slot(session, Duty.kitchen, MONDAY)
     assert [x.user_id for x in kitchen.assignments] == [first.id]
 
-    await jobs.run_daily_tick(session, make_datetime(MONDAY + timedelta(days=1), 13))
+    await jobs.run_daily_job(session, make_datetime(MONDAY + timedelta(days=1), 13))
     assert await strikes.get_active_strikes(session, newbie.id) == []
 
 
 async def test_web_errors_do_not_break_the_page(session, client):
     people = await make_users(session, n=4)
-    first, _, p1, _ = await get_kitchen_pair(session, settings.today())
+    first, _, p1, _ = await assign_kitchen_pair(session, settings.today())
     outsider = next(p for p in people if p.id != p1.id and not p.is_admin)
 
     # Clicking someone else's card button reloads the page instead of nesting it in the card.
@@ -466,7 +466,7 @@ async def test_moving_out_does_not_change_the_others_balance(session):
     people = await make_users(session, n=5)
     day = MONDAY
     for _ in range(10):
-        await jobs.run_daily_tick(session, make_datetime(day))
+        await jobs.run_daily_job(session, make_datetime(day))
         slot = await duties.get_slot(session, Duty.kitchen, day)
         claim = await duties.get_assignment(session, slot.assignments[0].id)
         await duties.mark_duty_done(session, claim, claim.user, make_datetime(day, 20))
@@ -495,14 +495,14 @@ async def test_moving_out_does_not_change_the_others_balance(session):
 async def test_moving_out_drops_open_penalty_week(session):
     people = await make_users(session)
     leaving = people[1]
-    await jobs.run_daily_tick(session, make_datetime(MONDAY))
+    await jobs.run_daily_job(session, make_datetime(MONDAY))
     for _ in range(3):
         await strikes.issue_strike(session, user_id=leaving.id, reason="x", today=MONDAY)
     await session.commit()
 
     await users.delete_user(session, leaving, MONDAY)
     await session.commit()
-    await jobs.run_daily_tick(session, make_datetime(MONDAY + timedelta(days=7)))
+    await jobs.run_daily_job(session, make_datetime(MONDAY + timedelta(days=7)))
     slot = await duties.get_slot(session, Duty.trash, MONDAY + timedelta(days=7))
     assert not slot.is_penalty and len(slot.assignments) == 1
 

@@ -214,7 +214,7 @@ async def show_dashboard(request: Request, session: Session, user: OptionalUser)
     today = settings.today()
     slots = {duty: await duties.get_slot(session, duty, today) for duty in Duty}
     if None in slots.values():
-        await jobs.run_daily_tick(session, settings.now())
+        await jobs.run_daily_job(session, settings.now())
         slots = {duty: await duties.get_slot(session, duty, today) for duty in Duty}
 
     tomorrow = today + timedelta(days=1)
@@ -321,7 +321,7 @@ async def delete_away_period(request: Request, session: Session, user: CurrentUs
     away = await get_or_404(session, AwayPeriod, away_id)
     if away.user_id != user.id and not user.is_admin:
         raise HTTPException(404)
-    await users.remove_away_period(session, away)
+    await users.delete_away_period(session, away)
     await session.commit()
     flash_message(request, "Abwesenheit gelöscht")
     return redirect_to("/me")
@@ -502,7 +502,7 @@ async def edit_resident(
         return redirect_to("/admin")
     if room_number.strip():
         try:
-            target.room_number = users.normalize_room(room_number)
+            target.room_number = users.parse_room_number(room_number)
         except UserError as e:
             flash_message(request, str(e), "error")
             return redirect_to("/admin")
@@ -601,8 +601,8 @@ async def dispute_duty(request: Request, session: Session, user: AdminUser, assi
 
 
 @router.post("/admin/tick")
-async def run_daily_job(request: Request, session: Session, user: AdminUser):
+async def run_daily_job_now(request: Request, session: Session, user: AdminUser):
     """Run the daily job now instead of waiting for the schedule."""
-    await jobs.run_daily_tick(session, settings.now())
+    await jobs.run_daily_job(session, settings.now())
     flash_message(request, "Tagesjob ausgeführt")
     return redirect_to("/admin")

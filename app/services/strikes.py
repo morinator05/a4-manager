@@ -54,7 +54,7 @@ async def issue_strike(
     )
     session.add(strike)
     await session.flush()
-    await check_strike_threshold(session, user_id, today)
+    await add_penalty_week_if_due(session, user_id, today)
     return strike
 
 
@@ -81,8 +81,8 @@ async def find_free_penalty_week(session: AsyncSession, user_id: int, today: dat
     return week
 
 
-async def check_strike_threshold(session: AsyncSession, user_id: int, today: date) -> None:
-    """Turn `strike_threshold` active strikes into a penalty Mülldienst week.
+async def add_penalty_week_if_due(session: AsyncSession, user_id: int, today: date) -> None:
+    """Once the user has `strike_threshold` active strikes, add a penalty Mülldienst week.
 
     The penalty week replaces the regular Mülldienst of that week. The oldest strikes are
     marked as paid off by it, so they no longer count.

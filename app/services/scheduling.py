@@ -1,7 +1,7 @@
 """Fair duty assignment ("deficit" scheduling).
 
 Every slot (a day of kitchen duty, a week of trash duty) is one job. `n` people are put
-on it (kitchen: 2, trash: 1), but only one of them does it: whoever marks it done first.
+on it (by default kitchen: 2, trash: 1), but only one of them does it: whoever marks it done first.
 All users available for that slot accrue an equal share `1 / len(available)` of
 *expected* work. A user's debt is `expected - credit`, where credit counts the jobs they
 actually did. The `n` users with the highest debt are picked, not counting their share of

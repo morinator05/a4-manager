@@ -12,18 +12,18 @@ from app.services import duties
 
 log = logging.getLogger(__name__)
 
-# Arbitrary, app-wide id for the Postgres advisory lock that serializes ticks.
-DAILY_TICK_LOCK_ID = 4004
+# Arbitrary, app-wide id for the Postgres advisory lock that keeps two runs of the daily job apart.
+DAILY_JOB_LOCK_ID = 4004
 
 
-async def run_daily_tick(session: AsyncSession, now: datetime) -> None:
+async def run_daily_job(session: AsyncSession, now: datetime) -> None:
     """Strike overdue duties, then make sure today's and this week's people are picked.
 
     Safe to run any number of times; it also commits. Runs on a schedule, on startup,
     from the Flursprecher page, and from the dashboard if today's slots are missing.
     """
     # The scheduler, startup and page loads may run it at the same time.
-    await session.execute(text("SELECT pg_advisory_xact_lock(:id)"), {"id": DAILY_TICK_LOCK_ID})
+    await session.execute(text("SELECT pg_advisory_xact_lock(:id)"), {"id": DAILY_JOB_LOCK_ID})
     missed = await duties.process_overdue_duties(session, now)
     await duties.fill_current_slots(session, now.date())
     await session.commit()
@@ -31,7 +31,7 @@ async def run_daily_tick(session: AsyncSession, now: datetime) -> None:
         log.info("Marked %d assignments as missed", len(missed))
 
 
-async def run_scheduled_tick() -> None:
-    """`run_daily_tick` with its own session, for the scheduler (no request around it)."""
+async def run_scheduled_job() -> None:
+    """`run_daily_job` with its own session, for the scheduler (no request around it)."""
     async with SessionLocal() as session:
-        await run_daily_tick(session, settings.now())
+        await run_daily_job(session, settings.now())

@@ -74,19 +74,19 @@ async def reset_open_slots(session: AsyncSession, today: date) -> int:
     return len(stale)
 
 
-async def run_tick(session: AsyncSession, now: datetime) -> None:
+async def run_daily_job_at(session: AsyncSession, now: datetime) -> None:
     """The daily job as if it ran at `now`; its strikes are dated `now` too."""
     last = await session.scalar(select(func.max(Strike.id))) or 0
-    await jobs.run_daily_tick(session, now)
+    await jobs.run_daily_job(session, now)
     await session.execute(update(Strike).where(Strike.id > last).values(created_at=now))
     await session.commit()
     session.expire_all()
 
 
-async def mark_duty(session: AsyncSession, assignment_id: int, now: datetime) -> None:
+async def mark_done_if_open(session: AsyncSession, assignment_id: int, now: datetime) -> None:
     """The assignment's person marks it done at `now`, if it is still open."""
     a = await duties.get_assignment(session, assignment_id)
-    if a.status is not Status.pending or any(x.status is Status.done for x in a.slot.assignments):
+    if a.status is not Status.pending or a.slot.claimed_assignment is not None:
         return
     actor = await session.get(User, a.user_id)
     await duties.mark_duty_done(session, a, actor, now)
@@ -94,7 +94,7 @@ async def mark_duty(session: AsyncSession, assignment_id: int, now: datetime) ->
     session.expire_all()
 
 
-async def play_duty(
+async def simulate_duty_outcome(
     session: AsyncSession,
     duty: Duty,
     day: date,
@@ -103,19 +103,18 @@ async def play_duty(
     rng: random.Random,
     late: dict[date, list[int]],
 ) -> None:
-    """Whether the slot of `duty` containing `day` gets done at `now`, tomorrow or never."""
+    """Let one of the slot's people do it now, tomorrow morning or never, by their reliability."""
     slot = await duties.get_slot(session, duty, day)
     if slot is None:
         return
     pending = [a for a in slot.assignments if a.status is Status.pending and a.user_id]
     if not pending:
         return
-    # One of them would do it; whether they do depends on how reliable they are.
     doer = rng.choice(pending)
     x = rng.random()
     r = reliability.get(doer.user_id, 0.9)
     if x < r * SAME_DAY:
-        await mark_duty(session, doer.id, now)
+        await mark_done_if_open(session, doer.id, now)
     elif x < r:
         late.setdefault(now.date() + timedelta(days=1), []).append(doer.id)
 
@@ -144,24 +143,26 @@ async def simulate_history(session: AsyncSession, days: int, rng: random.Random)
     day = start
     while day <= today:
         steps = [
-            (make_datetime(day, 0, 5), "tick"),
+            (make_datetime(day, 0, 5), "job"),
             (make_datetime(day, 9), "late"),
-            (make_datetime(day, 12, 5), "tick"),
+            (make_datetime(day, 12, 5), "job"),
             (make_datetime(day, 18), "trash"),
             (make_datetime(day, 20), "kitchen"),
         ]
         for when, step in steps:
             if when >= now:
                 break
-            if step == "tick":
-                await run_tick(session, when)
+            if step == "job":
+                await run_daily_job_at(session, when)
             elif step == "late":
                 for assignment_id in late.pop(day, []):
-                    await mark_duty(session, assignment_id, when)
+                    await mark_done_if_open(session, assignment_id, when)
             elif step == "trash" and duties.get_slot_bounds(Duty.trash, day)[1] == day:
-                await play_duty(session, Duty.trash, day, when, reliability, rng, late)
+                await simulate_duty_outcome(session, Duty.trash, day, when, reliability, rng, late)
             elif step == "kitchen" and day < today:
-                await play_duty(session, Duty.kitchen, day, when, reliability, rng, late)
+                await simulate_duty_outcome(
+                    session, Duty.kitchen, day, when, reliability, rng, late
+                )
         day += timedelta(days=1)
 
     counts = dict(
@@ -204,7 +205,7 @@ async def main(count: int, password: str, days: int, seed: int | None) -> None:
         await session.commit()
         if days:
             await simulate_history(session, days, random.Random(seed))
-        await jobs.run_daily_tick(session, settings.now())
+        await jobs.run_daily_job(session, settings.now())
     print(f"{added} residents added ({count - added} already existed), password: {password}")
     if reopened:
         print(f"{reopened} open slots picked again")

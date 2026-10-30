@@ -16,7 +16,7 @@ from app.config import settings
 from app.db import SessionLocal
 from app.deps import LoginRequired
 from app.services import users
-from app.services.jobs import run_scheduled_tick
+from app.services.jobs import run_scheduled_job
 from app.web import router
 
 logging.basicConfig(level=logging.INFO)
@@ -39,9 +39,9 @@ async def lifespan(app: FastAPI):
         # Shortly after midnight (new day/week) and right after the deadline hour.
         for hour in sorted({0, settings.deadline_hour}):
             trigger = CronTrigger(hour=hour, minute=5, timezone=settings.tz)
-            scheduler.add_job(run_scheduled_tick, trigger)
+            scheduler.add_job(run_scheduled_job, trigger)
         scheduler.start()
-        await run_scheduled_tick()
+        await run_scheduled_job()
     yield
     if scheduler:
         scheduler.shutdown()

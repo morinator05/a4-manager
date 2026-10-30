@@ -25,8 +25,8 @@ class UserError(Exception):
 ROOM_PATTERN = re.compile(r"[A-Z][0-9](0[1-9]|[1-9][0-9])")
 
 
-def normalize_room(room_number: str) -> str:
-    """Trim and upper-case a room number; `UserError` unless it looks like A403."""
+def parse_room_number(room_number: str) -> str:
+    """The room number trimmed and in upper case; `UserError` unless it looks like A403."""
     room_number = room_number.strip().upper()
     if not ROOM_PATTERN.fullmatch(room_number):
         raise UserError(
@@ -55,7 +55,7 @@ async def create_user(
     username = normalize_username(username)
     if not (name and room_number.strip() and username and password):
         raise UserError("Alle Felder müssen ausgefüllt sein")
-    room_number = normalize_room(room_number)
+    room_number = parse_room_number(room_number)
     if len(password) < MIN_PASSWORD_LENGTH:
         raise UserError(PASSWORD_TOO_SHORT)
     if await session.scalar(select(User).where(User.username == username)):
@@ -142,7 +142,7 @@ async def add_away_period(
     await duties.replace_unavailable_people(session, today)
 
 
-async def remove_away_period(session: AsyncSession, away: AwayPeriod) -> None:
+async def delete_away_period(session: AsyncSession, away: AwayPeriod) -> None:
     """Delete an away period. Duties already reassigned stay with their new people."""
     await session.delete(away)
     await session.flush()
