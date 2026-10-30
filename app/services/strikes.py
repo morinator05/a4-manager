@@ -22,6 +22,7 @@ async def active_strikes(session: AsyncSession, user_id: int) -> list[Strike]:
             select(Strike)
             .where(
                 Strike.user_id == user_id,
+                # The same rule as `Strike.is_active`, as SQL.
                 Strike.revoked_at.is_(None),
                 Strike.redeemed_by_assignment_id.is_(None),
             )
@@ -79,21 +80,17 @@ async def next_free_penalty_week(session: AsyncSession, user_id: int, today: dat
     return week
 
 
-async def check_threshold(session: AsyncSession, user_id: int, today: date) -> Assignment | None:
+async def check_threshold(session: AsyncSession, user_id: int, today: date) -> None:
     """Turn `strike_threshold` active strikes into a penalty Mülldienst week.
 
     The penalty week replaces the regular Mülldienst of that week. The oldest strikes are
     marked as paid off by it, so they no longer count.
-
-    Returns:
-        The penalty assignment, or None if the user doesn't have enough strikes.
     """
     active = await active_strikes(session, user_id)
     if len(active) < settings.strike_threshold:
-        return None
-    user = await session.get(User, user_id)
-    if user is None:
-        return None
+        return
+    if await session.get(User, user_id) is None:
+        return
 
     week = await next_free_penalty_week(session, user_id, today)
     start, end = scheduling.week_bounds(week)
@@ -111,4 +108,3 @@ async def check_threshold(session: AsyncSession, user_id: int, today: date) -> A
     for s in active[: settings.strike_threshold]:
         s.redeemed_by_assignment_id = assignment.id
     await session.flush()
-    return assignment

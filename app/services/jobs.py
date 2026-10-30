@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db import SessionLocal
-from app.models import Duty
 from app.services import duties
 
 log = logging.getLogger(__name__)
@@ -26,8 +25,7 @@ async def daily_tick(session: AsyncSession, now: datetime) -> None:
     # The scheduler, startup and page loads may run it at the same time.
     await session.execute(text("SELECT pg_advisory_xact_lock(:id)"), {"id": DAILY_TICK_LOCK_ID})
     missed = await duties.process_overdue(session, now)
-    await duties.materialize(session, Duty.kitchen, now.date())
-    await duties.materialize(session, Duty.trash, now.date())
+    await duties.fill_current(session, now.date())
     await session.commit()
     if missed:
         log.info("Marked %d assignments as missed", len(missed))
