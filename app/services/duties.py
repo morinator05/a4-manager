@@ -68,7 +68,7 @@ def slot_pending(slot: Slot, a: Assignment) -> Fraction:
     """
     if slot.is_penalty or a.status is not Status.pending:
         return Fraction(0)
-    if any(x.status is Status.done for x in slot.assignments):
+    if slot.claimed_assignment is not None:
         return Fraction(0)
     return Fraction(1, sum(x.status is Status.pending for x in slot.assignments))
 
@@ -118,8 +118,8 @@ async def materialize(session: AsyncSession, duty: Duty, day: date) -> Slot:
     existing = await get_slot(session, duty, day)
     n = people_per_slot(duty)
     if existing is not None:
-        already_done = any(a.status is Status.done for a in existing.assignments)
-        if existing.is_penalty or already_done or len(existing.assignments) >= n:
+        is_claimed = existing.claimed_assignment is not None
+        if existing.is_penalty or is_claimed or len(existing.assignments) >= n:
             return existing
         await _top_up(session, existing, n - len(existing.assignments))
         return await get_slot(session, duty, day)
@@ -256,8 +256,7 @@ def can_mark_done(a: Assignment, actor: User, now: datetime) -> bool:
     Residents: only their own open duty, from its first day until the deadline.
     Flursprecher: any duty at any time, as long as nobody on the slot has done it.
     """
-    # Only one person does a slot: once somebody claimed it, it's closed.
-    if any(x.status is Status.done for x in a.slot.assignments):
+    if a.slot.claimed_assignment is not None:
         return False
     if actor.is_admin:
         return True
@@ -393,7 +392,7 @@ async def preview(session: AsyncSession, duty: Duty, start: date, end: date) -> 
     open_slots = [
         (s.start_date, [a.user_id for a in s.assignments if a.status is Status.pending])
         for s in earlier
-        if not any(a.status is Status.done for a in s.assignments)
+        if s.claimed_assignment is None
     ]
 
     # plan() returns one list of user ids per `todo` slot, in the same order.

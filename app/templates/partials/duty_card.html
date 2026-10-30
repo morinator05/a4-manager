@@ -24,7 +24,7 @@
         {% endif %}
       </div>
     {% endfor %}
-    {% set claimed = slot.assignments|selectattr("status", "equalto", Status.done)|first %}
+    {% set claimed = slot.claimed_assignment %}
     {% if claimed %}
       <p class="muted">Erledigt von {{ person(claimed.user) }}
         am {{ claimed.completed_at|date_time }}</p>

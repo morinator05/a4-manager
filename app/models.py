@@ -126,6 +126,11 @@ class Slot(Base):
         back_populates="slot", cascade="all, delete-orphan"
     )
 
+    @property
+    def claimed_assignment(self) -> "Assignment | None":
+        """Whoever marked the slot done. Only one person does a slot, so it is closed then."""
+        return next((a for a in self.assignments if a.status is Status.done), None)
+
 
 class SlotEligible(Base):
     """Users that were available for a slot; each accrues an equal share of its expected work."""

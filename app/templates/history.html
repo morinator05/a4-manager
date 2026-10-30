@@ -14,7 +14,7 @@
   <colgroup><col class="col-date"><col><col>{% if user.is_admin %}<col class="col-action">{% endif %}</colgroup>
   <tr><th>Datum</th><th>Eingeteilt</th><th>Erledigt von</th>{% if user.is_admin %}<th class="end"></th>{% endif %}</tr>
   {% for slot in slots if slot.duty == duty %}
-    {% set claimed = slot.assignments|selectattr("status", "equalto", Status.done)|first %}
+    {% set claimed = slot.claimed_assignment %}
     {% set disputed = slot.assignments|selectattr("disputed_at")|first %}
     <tr>
       <td>{{ slot.start_date|weekday }} {{ slot.start_date|short_date }}{% if slot.end_date != slot.start_date %}–{{ slot.end_date|short_date }}{% endif %}

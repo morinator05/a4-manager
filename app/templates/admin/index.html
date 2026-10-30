@@ -89,7 +89,6 @@
   <div class="table-wrap"><table>
     <tr><th>Datum</th><th>Dienst</th><th>Bewohner</th><th>Status</th><th class="end"></th></tr>
     {% for slot in slots %}
-      {% set slot_done = slot.assignments|selectattr("status", "equalto", Status.done)|list %}
       {% for a in slot.assignments %}
         <tr>
           <td>{{ slot.start_date|weekday }} {{ slot.start_date|short_date }}{% if slot.end_date != slot.start_date %}–{{ slot.end_date|short_date }}{% endif %}</td>
@@ -97,7 +96,7 @@
           <td>{{ person(a.user) }}</td>
           <td>{% include "partials/status.html" %}</td>
           <td class="end">
-            {% if not slot_done %}
+            {% if not slot.claimed_assignment %}
               <form method="post" action="/assignments/{{ a.id }}/done?next=/admin" class="inline">
                 <button class="secondary">Erledigt</button></form>
             {% endif %}
