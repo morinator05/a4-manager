@@ -2,6 +2,7 @@
 
 import logging
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from pathlib import Path
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -52,7 +53,7 @@ app.add_middleware(
     secret_key=settings.secret_key,
     session_cookie="a4_session",
     same_site="lax",
-    max_age=60 * 60 * 24 * 90,  # stay logged in for 90 days
+    max_age=int(timedelta(days=90).total_seconds()),
 )
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 app.include_router(router)

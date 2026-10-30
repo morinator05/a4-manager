@@ -25,14 +25,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sqlalchemy import delete, func, select, update  # noqa: E402
-from sqlalchemy.ext.asyncio import AsyncSession  # noqa: E402
-from sqlalchemy.orm import selectinload  # noqa: E402
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from app.config import settings  # noqa: E402
-from app.db import SessionLocal  # noqa: E402
-from app.models import Assignment, Duty, Slot, Status, Strike, User  # noqa: E402
-from app.services import duties, jobs, users  # noqa: E402
+from app.config import settings
+from app.db import SessionLocal
+from app.models import Assignment, Duty, Slot, Status, Strike, User
+from app.services import duties, jobs, users
 
 # fmt: off
 FIRST_NAMES = [

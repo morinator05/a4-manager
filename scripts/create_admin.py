@@ -7,8 +7,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.db import SessionLocal  # noqa: E402
-from app.services import users  # noqa: E402
+from app.db import SessionLocal
+from app.services import users
 
 
 async def main() -> None:
@@ -32,4 +32,5 @@ async def main() -> None:
         print(f"Flursprecher {user.name} (@{user.username}) angelegt.")
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

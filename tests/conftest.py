@@ -6,15 +6,15 @@ os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://a4:a4@localhost:5432
 os.environ["RUN_SCHEDULER"] = "false"
 os.environ.setdefault("SECRET_KEY", "test-secret-key-that-is-long-enough-0123456789")
 
-import asyncpg  # noqa: E402
-import pytest  # noqa: E402
-from sqlalchemy.engine import make_url  # noqa: E402
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
-from sqlalchemy.pool import NullPool  # noqa: E402
+import asyncpg
+import pytest
+from sqlalchemy.engine import make_url
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
-from app import db  # noqa: E402
-from app.config import settings  # noqa: E402
-from app.models import Base  # noqa: E402
+from app import db
+from app.config import settings
+from app.models import Base
 
 
 async def ensure_test_database() -> None:
