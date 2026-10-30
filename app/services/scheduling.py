@@ -118,12 +118,10 @@ def pick(
     return sorted(eligible, key=key)[:n]
 
 
-def credit(
-    balances: dict[int, Balance], uid: int, on: date, amount: Fraction = Fraction(1)
-) -> None:
-    """Book `amount` of done work for `uid` on the slot starting `on`."""
+def credit(balances: dict[int, Balance], uid: int, on: date) -> None:
+    """Book one done job for `uid` on the slot starting `on`."""
     b = balances.setdefault(uid, Balance())
-    b.credit += amount
+    b.credit += 1
     b.last_done = on if b.last_done is None else max(b.last_done, on)
 
 
@@ -152,8 +150,8 @@ def _replace_by_roles(
     if len(members) < 2:
         return candidates
     before = [balances.pop(c.id, Balance()) for c in members]
-    expected = sum((b.expected for b in before), Fraction(0)) / len(before)
-    done = sum((b.credit for b in before), Fraction(0)) / len(before)
+    avg_expected = sum((b.expected for b in before), Fraction(0)) / len(before)
+    avg_credit = sum((b.credit for b in before), Fraction(0)) / len(before)
     last_done = max((b.last_done for b in before if b.last_done), default=None)
     room = min((c.room for c in members), key=room_key)
     away = tuple(period for c in members for period in c.away)
@@ -163,8 +161,8 @@ def _replace_by_roles(
         rid = -(len(roles) + 1)
         roles[rid] = Role(start, did_it)
         balances[rid] = Balance(
-            expected=expected,
-            credit=done + (1 if did_it else 0),
+            expected=avg_expected,
+            credit=avg_credit + (1 if did_it else 0),
             last_done=start if did_it else last_done,
         )
         result.append(Candidate(rid, room, away))

@@ -56,11 +56,9 @@ async def load_candidates(session: AsyncSession) -> list[Candidate]:
     ]
 
 
-def slot_credit(slot: Slot, a: Assignment) -> Fraction:
-    """Fairness credit an assignment earns: 1 for whoever did it, 0 for the others."""
-    if slot.is_penalty or a.status is not Status.done:
-        return Fraction(0)
-    return Fraction(1)
+def earns_credit(slot: Slot, a: Assignment) -> bool:
+    """Only whoever did the slot earns credit, and penalty slots never give any."""
+    return not slot.is_penalty and a.status is Status.done
 
 
 def slot_pending(slot: Slot, a: Assignment) -> Fraction:
@@ -96,10 +94,9 @@ async def load_balances(session: AsyncSession, duty: Duty) -> dict[int, Balance]
         for a in slot.assignments:
             if a.user_id is None:
                 continue
-            done = slot_credit(slot, a)
-            if done:
-                scheduling.credit(balances, a.user_id, slot.start_date, done)
-            balances.setdefault(a.user_id, Balance()).pending += slot_pending(slot, a)
+            if earns_credit(slot, a):
+                scheduling.credit(balances, a.user_id, slot.start_date)
+            scheduling.reserve(balances, a.user_id, slot_pending(slot, a))
     return balances
 
 
