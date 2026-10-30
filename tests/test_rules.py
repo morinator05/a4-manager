@@ -1,6 +1,7 @@
 """Rules against a real database: assigning, deadlines, strikes, moving out, web pages."""
 
 import random
+from collections import Counter
 from datetime import date, datetime, time, timedelta
 from fractions import Fraction
 
@@ -19,6 +20,7 @@ from app.services.users import UserError
 from app.web import person_html
 
 MONDAY = date(2026, 11, 2)
+PASSWORD = "secret123"
 
 
 def at(day: date, hour: int = 9) -> datetime:
@@ -27,7 +29,7 @@ def at(day: date, hour: int = 9) -> datetime:
 
 
 async def make_users(session, n=15, admin=True):
-    """`n` residents p1..pn (password "secret123"); p1 is the Flursprecher if `admin`."""
+    """`n` residents p1..pn with `PASSWORD`; p1 is the Flursprecher if `admin`."""
     created = []
     for i in range(1, n + 1):
         created.append(
@@ -36,7 +38,7 @@ async def make_users(session, n=15, admin=True):
                 name=f"Person {i}",
                 room_number=f"A4{i:02d}",
                 username=f"p{i}",
-                password="secret123",
+                password=PASSWORD,
                 is_admin=admin and i == 1,
             )
         )
@@ -44,13 +46,14 @@ async def make_users(session, n=15, admin=True):
     return created
 
 
-async def kitchen_pair(session, people, day=MONDAY):
-    """Run the daily job for `day`; returns the kitchen slot, its two assignments and people."""
+async def kitchen_pair(session, day=MONDAY):
+    """Run the daily job for `day`; returns the two kitchen assignments and their people."""
     await jobs.daily_tick(session, at(day))
     kitchen = await duties.get_slot(session, Duty.kitchen, day)
-    by_id = {p.id: p for p in people}
-    first, second = kitchen.assignments
-    return kitchen, first, second, by_id[first.user_id], by_id[second.user_id]
+    # Loaded like the app does, with `.slot`, so `mark_done` never has to load it lazily:
+    # that fails in async code and made this helper's tests fail now and then.
+    first, second = [await duties.get_assignment(session, a.id) for a in kitchen.assignments]
+    return first, second, first.user, second.user
 
 
 @pytest.fixture
@@ -64,7 +67,7 @@ async def client(session_factory):
 
 async def login(client, username):
     """Log in as `username` with the test password."""
-    r = await client.post("/login", data={"username": username, "password": "secret123"})
+    r = await client.post("/login", data={"username": username, "password": PASSWORD})
     assert r.status_code == 303
 
 
@@ -101,12 +104,13 @@ async def test_missed_kitchen_strikes_both(session):
 
 async def test_three_strikes_give_penalty_in_next_free_week(session):
     people = await make_users(session)
-    admin, a, b = people[0], people[1], people[2]
+    admin, a, b = people[:3]
     await jobs.daily_tick(session, at(MONDAY))
-    for _ in range(3):
-        await strikes.issue(session, user_id=a.id, reason="x", issued_by_id=admin.id, today=MONDAY)
-    for _ in range(3):
-        await strikes.issue(session, user_id=b.id, reason="x", issued_by_id=admin.id, today=MONDAY)
+    for user in (a, b):
+        for _ in range(3):
+            await strikes.issue(
+                session, user_id=user.id, reason="x", issued_by_id=admin.id, today=MONDAY
+            )
     await session.commit()
 
     penalties = (
@@ -140,7 +144,7 @@ async def test_mark_done_permissions(session):
     admin = people[0]
     # Keep the admin off today's duty, so the outsider/admin checks are meaningful.
     await users.add_away(session, admin, MONDAY, MONDAY + timedelta(days=1), MONDAY)
-    _, first, second, p1, p2 = await kitchen_pair(session, people)
+    first, second, p1, p2 = await kitchen_pair(session)
     outsider = next(p for p in people if p.id not in {p1.id, p2.id} and not p.is_admin)
 
     with pytest.raises(DutyError):
@@ -151,7 +155,7 @@ async def test_mark_done_permissions(session):
 
     # Too late for a resident, but the Flursprecher can still do it.
     tuesday = MONDAY + timedelta(days=1)
-    _, t_first, _, t1, _ = await kitchen_pair(session, people, tuesday)
+    t_first, _, t1, _ = await kitchen_pair(session, tuesday)
     with pytest.raises(DutyError):
         await duties.mark_done(session, t_first, t1, at(tuesday + timedelta(days=1), 12))
     await duties.mark_done(session, t_first, admin, at(tuesday + timedelta(days=1), 12))
@@ -159,8 +163,8 @@ async def test_mark_done_permissions(session):
 
 
 async def test_first_claim_closes_the_slot(session):
-    people = await make_users(session)
-    kitchen, first, second, p1, p2 = await kitchen_pair(session, people)
+    await make_users(session)
+    first, second, p1, p2 = await kitchen_pair(session)
 
     await duties.mark_done(session, second, p2, at(MONDAY, 20))
     assert second.status is Status.done and second.completed_by_id == p2.id
@@ -177,8 +181,8 @@ async def test_first_claim_closes_the_slot(session):
 
 
 async def test_open_slot_is_shared_for_picking_but_not_for_debt(session):
-    people = await make_users(session)
-    _, _, _, p1, p2 = await kitchen_pair(session, people)
+    await make_users(session)
+    _, _, p1, p2 = await kitchen_pair(session)
     balances = await duties.load_balances(session, Duty.kitchen)
     assert balances[p1.id].pending == balances[p2.id].pending == Fraction(1, 2)
     # The debt shown only changes once someone marks it done.
@@ -190,8 +194,8 @@ async def test_open_slot_is_shared_for_picking_but_not_for_debt(session):
 
 
 async def test_preview_shows_open_pair_as_roles(session):
-    people = await make_users(session)
-    _, first, _, p1, p2 = await kitchen_pair(session, people)
+    await make_users(session)
+    first, _, p1, p2 = await kitchen_pair(session)
 
     async def shown():
         preview = await duties.preview(
@@ -213,8 +217,8 @@ async def test_preview_shows_open_pair_as_roles(session):
 
 
 async def test_partner_who_did_not_clean_is_picked_next(session):
-    people = await make_users(session)
-    _, first, _, p1, p2 = await kitchen_pair(session, people)
+    await make_users(session)
+    first, _, p1, p2 = await kitchen_pair(session)
     await duties.mark_done(session, first, p1, at(MONDAY, 20))
     tomorrow = await duties.materialize(session, Duty.kitchen, MONDAY + timedelta(days=1))
     ids = {a.user_id for a in tomorrow.assignments}
@@ -225,7 +229,7 @@ async def test_dispute_gives_strike_and_removes_credit(session):
     people = await make_users(session)
     admin = people[0]
     await users.add_away(session, admin, MONDAY, MONDAY, MONDAY)
-    _, first, second, p1, p2 = await kitchen_pair(session, people)
+    first, second, p1, p2 = await kitchen_pair(session)
     await duties.mark_done(session, first, p1, at(MONDAY, 20))
 
     with pytest.raises(DutyError):
@@ -257,11 +261,11 @@ async def test_admin_marking_missed_done_revokes_strike(session):
 
 
 async def test_away_replaces_pending_assignment(session):
-    people = await make_users(session)
+    await make_users(session)
     await jobs.daily_tick(session, at(MONDAY))
     kitchen = await duties.get_slot(session, Duty.kitchen, MONDAY)
-    leaving_id = kitchen.assignments[0].user_id
-    leaving = next(p for p in people if p.id == leaving_id)
+    leaving = kitchen.assignments[0].user
+    leaving_id = leaving.id
 
     await users.add_away(session, leaving, MONDAY, MONDAY + timedelta(days=3), MONDAY)
     await session.commit()
@@ -276,11 +280,11 @@ async def test_away_replaces_pending_assignment(session):
 
 
 async def test_delete_user_keeps_history_and_replaces(session):
-    people = await make_users(session)
+    await make_users(session)
     await jobs.daily_tick(session, at(MONDAY))
     trash = await duties.get_slot(session, Duty.trash, MONDAY)
-    gone_id = trash.assignments[0].user_id
-    gone = next(p for p in people if p.id == gone_id)
+    gone = trash.assignments[0].user
+    gone_id = gone.id
     await users.delete(session, gone, MONDAY)
     await session.commit()
     trash = await duties.get_slot(session, Duty.trash, MONDAY)
@@ -300,19 +304,13 @@ async def test_month_of_ticks_is_fair(session):
         await duties.mark_done(session, claim, claim.user, at(day, 20))
         await session.commit()
         day += timedelta(days=1)
-    rows = (
-        (
-            await session.execute(
-                select(Assignment.user_id)
-                .join(Assignment.slot)
-                .where(Slot.duty == Duty.kitchen, Assignment.status == Status.done)
-            )
-        )
-        .scalars()
-        .all()
+    done_by = await session.scalars(
+        select(Assignment.user_id)
+        .join(Assignment.slot)
+        .where(Slot.duty == Duty.kitchen, Assignment.status == Status.done)
     )
-    counts = [rows.count(u) for u in set(rows)]
-    assert len(set(rows)) == 15 and max(counts) - min(counts) <= 1
+    counts = Counter(done_by).values()
+    assert len(counts) == 15 and max(counts) - min(counts) <= 1
 
 
 async def test_web_permissions(session, client):
@@ -362,8 +360,8 @@ async def test_understaffed_slot_is_topped_up(session):
 
 
 async def test_history_page_and_dispute(session, client):
-    people = await make_users(session, n=4)
-    _, first, _, p1, _ = await kitchen_pair(session, people, settings.today())
+    await make_users(session, n=4)
+    first, _, p1, _ = await kitchen_pair(session, settings.today())
     await duties.mark_done(session, first, p1, settings.now())
     await session.commit()
 
@@ -393,7 +391,7 @@ async def test_top_up_skips_slot_that_is_already_done(session):
 
     # A resident added later must not be put on the finished slot (and struck for it).
     newbie = await users.create(
-        session, name="Neu", room_number="A420", username="neu", password="secret123"
+        session, name="Neu", room_number="A420", username="neu", password=PASSWORD
     )
     await duties.fill_current(session, MONDAY)
     await session.commit()
@@ -406,7 +404,7 @@ async def test_top_up_skips_slot_that_is_already_done(session):
 
 async def test_web_errors_do_not_break_the_page(session, client):
     people = await make_users(session, n=4)
-    _, first, _, p1, _ = await kitchen_pair(session, people, settings.today())
+    first, _, p1, _ = await kitchen_pair(session, settings.today())
     outsider = next(p for p in people if p.id != p1.id and not p.is_admin)
 
     # Clicking someone else's card button reloads the page instead of nesting it in the card.
@@ -428,7 +426,7 @@ async def test_login_is_blocked_after_too_many_failures(session, client, monkeyp
         assert "Benutzername oder Passwort falsch" in (await client.get(r.headers["location"])).text
 
     # Even the right password is refused while blocked.
-    r = await client.post("/login", data={"username": "p2", "password": "secret123"})
+    r = await client.post("/login", data={"username": "p2", "password": PASSWORD})
     assert "Zu viele Fehlversuche" in (await client.get(r.headers["location"])).text
     assert (await client.get("/me")).status_code == 303
     # Other users can still log in.
@@ -444,7 +442,7 @@ async def test_short_passwords_are_rejected(session):
 async def test_initial_admin_only_on_empty_database(session, monkeypatch):
     monkeypatch.setattr(settings, "admin_username", "")  # whatever the local .env says
     assert await users.create_initial_admin(session) is None
-    for key, value in dict(username="Chef", password="secret123", name="Chef", room="A401").items():
+    for key, value in dict(username="Chef", password=PASSWORD, name="Chef", room="A401").items():
         monkeypatch.setattr(settings, f"admin_{key}", value)
     admin = await users.create_initial_admin(session)
     assert admin.is_admin and admin.username == "chef"
@@ -464,8 +462,8 @@ async def test_moving_out_does_not_change_the_others_balance(session):
         await session.commit()
         day += timedelta(days=1)
 
-    leaving, staying = people[1], [p for p in people if p is not people[1]]
-    staying_ids = [p.id for p in staying]
+    leaving = people[1]
+    staying_ids = [p.id for p in people if p is not leaving]
     before = await duties.load_balances(session, Duty.kitchen)
     # Move out on the last scheduled day, so no new slot changes the balances.
     await users.delete(session, leaving, day - timedelta(days=1))
@@ -475,7 +473,7 @@ async def test_moving_out_does_not_change_the_others_balance(session):
 
     # The new resident of that room starts with a clean slate.
     newbie = await users.create(
-        session, name="Neu", room_number=leaving.room_number, username="neu", password="secret123"
+        session, name="Neu", room_number=leaving.room_number, username="neu", password=PASSWORD
     )
     await session.commit()
     balances = await duties.load_balances(session, Duty.kitchen)

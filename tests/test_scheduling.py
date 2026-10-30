@@ -2,6 +2,7 @@
 
 import random
 from collections import Counter
+from dataclasses import replace
 from datetime import date, timedelta
 from itertools import pairwise
 
@@ -58,11 +59,12 @@ def test_no_double_duty_on_consecutive_days():
 def test_away_people_are_skipped_and_not_charged():
     cands = people(15)
     away_start, away_end = START + timedelta(days=30), START + timedelta(days=89)
-    cands[0] = Candidate(id=1, room="A4.1", away=((away_start, away_end),))
-    result = plan({}, cands, days(180), 2)
+    cands[0] = replace(cands[0], away=((away_start, away_end),))
+    slots = days(180)
+    result = plan({}, cands, slots, 2)
 
-    away_days = {d for d, _ in days(180) if away_start <= d <= away_end}
-    for (d, _), picked in zip(days(180), result, strict=True):
+    away_days = {d for d, _ in slots if away_start <= d <= away_end}
+    for (d, _), picked in zip(slots, result, strict=True):
         if d in away_days:
             assert 1 not in picked
 

@@ -31,7 +31,7 @@ async def ensure_test_database() -> None:
 
 @pytest.fixture
 async def session_factory(monkeypatch):
-    """Fresh tables; the app's own sessions use the test database too. Skips without DB."""
+    """Empty tables for each test; web requests use them too (via `db.SessionLocal`)."""
     engine = create_async_engine(settings.database_url, poolclass=NullPool)
     try:
         await ensure_test_database()
