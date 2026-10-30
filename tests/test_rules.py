@@ -1,5 +1,6 @@
 """Rules against a real database: assigning, deadlines, strikes, moving out, web pages."""
 
+import asyncio
 import random
 from collections import Counter
 from datetime import date, datetime, time, timedelta
@@ -8,10 +9,11 @@ from fractions import Fraction
 import httpx
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.config import settings
 from app.main import app
-from app.models import Assignment, Duty, Slot, Status
+from app.models import Assignment, Duty, Slot, Status, User
 from app.services import duties, jobs, strikes, users
 from app.services.duties import DutyError
 from app.services.login_throttle import LoginThrottle
@@ -182,6 +184,38 @@ async def test_first_claim_closes_the_slot(session):
     assert balances[p2.id].credit == 1 and balances[p1.id].credit == 0
     await jobs.run_daily_job(session, make_datetime(MONDAY + timedelta(days=2)))
     assert await strikes.get_active_strikes(session, p1.id) == []
+
+
+async def test_partners_clicking_at_once_claim_the_slot_once(session, session_factory):
+    await make_users(session)
+    first, second, p1, p2 = await assign_kitchen_pair(session)
+    await session.commit()
+
+    async def claim(assignment_id, user_id):
+        """Mark the duty done in its own session, like a separate request."""
+        async with session_factory() as s:
+            a = await duties.get_assignment(s, assignment_id)
+            await duties.mark_duty_done(s, a, await s.get(User, user_id), make_datetime(MONDAY, 20))
+            await s.commit()
+
+    results = await asyncio.gather(
+        claim(first.id, p1.id), claim(second.id, p2.id), return_exceptions=True
+    )
+    assert sorted(type(r).__name__ for r in results) == ["DutyError", "NoneType"]
+    done = await session.scalars(
+        select(Assignment).where(
+            Assignment.slot_id == first.slot_id, Assignment.status == Status.done
+        )
+    )
+    assert len(done.all()) == 1
+
+
+async def test_database_allows_one_done_per_slot(session):
+    await make_users(session)
+    first, second, _, _ = await assign_kitchen_pair(session)
+    first.status = second.status = Status.done
+    with pytest.raises(IntegrityError):
+        await session.flush()
 
 
 async def test_open_slot_is_shared_for_picking_but_not_for_debt(session):

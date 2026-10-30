@@ -9,10 +9,12 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     String,
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -154,6 +156,15 @@ class Assignment(Base):
     """One person put on one slot. How many per slot is set in `config.py`."""
 
     __tablename__ = "assignments"
+    # Only one person does a slot; `mark_duty_done` also locks the slot to keep it so.
+    __table_args__ = (
+        Index(
+            "uq_assignments_one_done_per_slot",
+            "slot_id",
+            unique=True,
+            postgresql_where=text("status = 'done'"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     slot_id: Mapped[int] = mapped_column(ForeignKey("slots.id", ondelete="CASCADE"), index=True)

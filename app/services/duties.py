@@ -286,6 +286,11 @@ async def mark_duty_done(session: AsyncSession, a: Assignment, actor: User, now:
     Also revokes strikes already given for the slot (the Flursprecher may mark it done
     after the deadline).
     """
+    # Both partners may click at the same time: the second waits here for the first, then
+    # sees the slot as claimed.
+    await session.execute(select(Slot.id).where(Slot.id == a.slot_id).with_for_update())
+    for x in a.slot.assignments:
+        await session.refresh(x, ["status"])
     if not can_mark_done(a, actor, now):
         raise DutyError("Du kannst diesen Dienst nicht abhaken")
     await _revoke_strikes(session, a, now)
