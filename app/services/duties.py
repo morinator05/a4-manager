@@ -35,6 +35,11 @@ def slot_bounds(duty: Duty, day: date) -> tuple[date, date]:
     return scheduling.week_bounds(day)
 
 
+def describe_slot(slot: Slot) -> str:
+    """E.g. "Küchendienst am 05.01.2026", for strike reasons."""
+    return f"{slot.duty.label} am {slot.start_date:%d.%m.%Y}"
+
+
 def deadline(slot: Slot) -> datetime:
     """Until when the slot can be marked done; after that it counts as missed."""
     day = slot.end_date + timedelta(days=settings.deadline_days_after)
@@ -212,7 +217,6 @@ async def process_overdue(session: AsyncSession, now: datetime) -> list[Assignme
     pending = (
         await session.scalars(
             select(Assignment)
-            .join(Assignment.slot)
             .where(Assignment.status == Status.pending)
             .options(selectinload(Assignment.slot))
         )
@@ -221,11 +225,10 @@ async def process_overdue(session: AsyncSession, now: datetime) -> list[Assignme
     for a in missed:
         a.status = Status.missed
         if a.user_id is not None:
-            label = a.slot.duty.label
             await strikes.issue(
                 session,
                 user_id=a.user_id,
-                reason=f"{label} am {a.slot.start_date:%d.%m.%Y} nicht eingetragen",
+                reason=f"{describe_slot(a.slot)} nicht eingetragen",
                 auto=True,
                 assignment_id=a.id,
                 today=now.date(),
@@ -321,10 +324,7 @@ async def dispute(session: AsyncSession, a: Assignment, actor: User, now: dateti
         await strikes.issue(
             session,
             user_id=a.user_id,
-            reason=(
-                f"{a.slot.duty.label} am {a.slot.start_date:%d.%m.%Y} als erledigt "
-                "eingetragen, aber nicht gemacht"
-            ),
+            reason=f"{describe_slot(a.slot)} als erledigt eingetragen, aber nicht gemacht",
             assignment_id=a.id,
             issued_by_id=actor.id,
             today=now.date(),
@@ -365,18 +365,22 @@ async def preview(session: AsyncSession, duty: Duty, start: date, end: date) -> 
         )
     }
     entries: list[PreviewEntry] = []
-    todo: list[tuple[date, date]] = []
+    to_simulate: list[PreviewEntry] = []
     day = first
     while day <= end:
-        bounds = slot_bounds(duty, day)
+        slot_start, slot_end = slot_bounds(duty, day)
         if day in existing:
             s = existing[day]
-            entries.append(
-                PreviewEntry(*bounds, [a.user_id for a in s.assignments if a.user_id], s.is_penalty)
+            entry = PreviewEntry(
+                start=slot_start,
+                end=slot_end,
+                user_ids=[a.user_id for a in s.assignments if a.user_id is not None],
+                is_penalty=s.is_penalty,
             )
         else:
-            todo.append(bounds)
-            entries.append(PreviewEntry(*bounds, []))
+            entry = PreviewEntry(start=slot_start, end=slot_end, user_ids=[])
+            to_simulate.append(entry)
+        entries.append(entry)
         day += step
 
     earlier = await session.scalars(
@@ -395,17 +399,13 @@ async def preview(session: AsyncSession, duty: Duty, start: date, end: date) -> 
         if s.claimed_assignment is None
     ]
 
-    # plan() returns one list of user ids per `todo` slot, in the same order.
-    planned = iter(
-        scheduling.plan(
-            await load_balances(session, duty),
-            await load_candidates(session),
-            todo,
-            n,
-            open_slots,
-        )
+    planned = scheduling.plan(
+        await load_balances(session, duty),
+        await load_candidates(session),
+        [(e.start, e.end) for e in to_simulate],
+        n,
+        open_slots,
     )
-    for e in entries:
-        if (e.start, e.end) in todo:
-            e.user_ids = next(planned)
+    for entry, user_ids in zip(to_simulate, planned, strict=True):
+        entry.user_ids = user_ids
     return entries
