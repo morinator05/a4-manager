@@ -1,13 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>{{ today|weekday }}, {{ today.strftime("%d.%m.%Y") }}</h1>
+<h1>{{ today|weekday }}, {{ today|long_date }}</h1>
 <div class="grid">
-  {% with slot=kitchen.slot, duty=kitchen.duty, deadline=kitchen.deadline, can_mark=kitchen.can_mark %}
-    {% include "partials/duty_card.html" %}
-  {% endwith %}
-  {% with slot=trash.slot, duty=trash.duty, deadline=trash.deadline, can_mark=trash.can_mark %}
-    {% include "partials/duty_card.html" %}
-  {% endwith %}
+  {% for card in cards %}
+    {% with slot=card.slot, duty=card.duty, deadline=card.deadline, can_mark=card.can_mark %}
+      {% include "partials/duty_card.html" %}
+    {% endwith %}
+  {% endfor %}
 </div>
 {% if not user %}<p class="muted"><a href="/login">Anmelden</a>, um Dienste abzuhaken.</p>{% endif %}
 

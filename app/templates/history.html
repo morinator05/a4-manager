@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Verlauf {{ help_link("status") }}</h1>
-<p class="muted">{{ since.strftime("%d.%m.%Y") }} bis {{ until.strftime("%d.%m.%Y") }}</p>
+<p class="muted">{{ since|long_date }} bis {{ until|long_date }}</p>
 
 <form method="get" action="/history" class="row">
   <label>Bis Datum <input type="date" name="until" value="{{ until }}" max="{{ today }}"></label>
@@ -37,7 +37,7 @@
         <td class="end">
           {% if claimed %}
             <form method="post" action="/admin/assignments/{{ claimed.id }}/dispute?next={{ ('/history?until=' ~ until)|urlencode }}" class="inline"
-                  hx-confirm="{{ claimed.user.display_name if claimed.user else 'ehemalig' }} hat eingetragen, aber nicht geputzt? Gibt einen Strike.">
+                  hx-confirm="{{ display_name(claimed.user) }} hat eingetragen, aber nicht geputzt? Gibt einen Strike.">
               <button class="danger">Beanstanden</button>
             </form>
           {% endif %}

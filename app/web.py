@@ -5,6 +5,7 @@ Routes only parse input, call a service and render or redirect; the rules live i
 doesn't submit the form again.
 """
 
+from collections import Counter
 from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
@@ -31,6 +32,9 @@ from app.services.users import UserError
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 
+# Shown instead of the name of someone who has moved out (their user is deleted).
+FORMER_RESIDENT = "ehemalig"
+
 
 def person_html(user: User | None, is_me: bool = False) -> Markup:
     """A person as HTML: the first name stands out, the room is a quieter tag after it.
@@ -38,13 +42,18 @@ def person_html(user: User | None, is_me: bool = False) -> Markup:
     `is_me` highlights the logged-in user's own entry, so they find themselves quickly.
     """
     if user is None:
-        return Markup('<span class="muted">ehemalig</span>')
+        return Markup('<span class="muted">{}</span>').format(FORMER_RESIDENT)
     html = Markup('<span class="person-name">{}</span> <span class="room">{}</span>').format(
         user.first_name, user.room_number
     )
     if is_me:
         return Markup('<span class="me">{}</span>').format(html)
     return html
+
+
+def display_name(user: User | None) -> str:
+    """`user.display_name`, or `FORMER_RESIDENT` once they moved out."""
+    return user.display_name if user else FORMER_RESIDENT
 
 
 @pass_context
@@ -60,7 +69,7 @@ def role(context, r: Role) -> Markup:
     """A preview stand-in: "Erledigt" (whoever cleans) or "Ausgelassen" (whoever doesn't).
 
     For an earlier slot that is still open (yesterday's before the deadline), its date
-    follows. Green with a tick if done, amber with a cross if not.
+    follows.
     """
     text = "Erledigt" if r.did_it else "Ausgelassen"
     if r.start != context.get("today"):
@@ -81,6 +90,7 @@ def help_link(topic: str) -> Markup:
 
 templates.env.globals["person"] = person
 templates.env.globals["help_link"] = help_link
+templates.env.globals["display_name"] = display_name
 templates.env.globals["role"] = role
 templates.env.tests["role"] = lambda x: isinstance(x, Role)
 templates.env.globals["Duty"] = Duty
@@ -93,6 +103,7 @@ templates.env.globals["css_version"] = int(
     (Path(__file__).parent / "static" / "style.css").stat().st_mtime
 )
 templates.env.filters["short_date"] = lambda d: f"{d:%d.%m.}" if d else ""
+templates.env.filters["long_date"] = lambda d: f"{d:%d.%m.%Y}" if d else ""
 templates.env.filters["date_time"] = lambda d: (
     f"{d.astimezone(settings.tz):%d.%m.%Y %H:%M}" if d else ""
 )
@@ -125,9 +136,12 @@ def safe_next(url: str | None) -> str:
     return "/"
 
 
-async def users_by_id(session: AsyncSession) -> dict[int, User]:
-    """All users by id, to show the names in the preview."""
-    return {u.id: u for u in await session.scalars(select(User))}
+async def get_or_404[T](session: AsyncSession, model: type[T], row_id: int) -> T:
+    """The row with this id, or a 404 page."""
+    row = await session.get(model, row_id)
+    if row is None:
+        raise HTTPException(404)
+    return row
 
 
 def duty_card_ctx(slot: Slot | None, duty: Duty, user: User | None) -> dict:
@@ -195,33 +209,30 @@ async def logout(request: Request):
 async def dashboard(request: Request, session: Session, user: OptionalUser):
     """Today's duties and the preview; visible without login."""
     today = settings.today()
-    kitchen = await duties.get_slot(session, Duty.kitchen, today)
-    trash = await duties.get_slot(session, Duty.trash, today)
-    if kitchen is None or trash is None:
+    slots = {duty: await duties.get_slot(session, duty, today) for duty in Duty}
+    if None in slots.values():
         await jobs.daily_tick(session, settings.now())
-        kitchen = await duties.get_slot(session, Duty.kitchen, today)
-        trash = await duties.get_slot(session, Duty.trash, today)
+        slots = {duty: await duties.get_slot(session, duty, today) for duty in Duty}
 
     tomorrow = today + timedelta(days=1)
     horizon = today + timedelta(days=settings.preview_days)
     kitchen_preview = await duties.preview(session, Duty.kitchen, tomorrow, horizon)
-    shown = [u for e in kitchen_preview for u in e.user_ids if isinstance(u, Role)]
+    roles = [u for e in kitchen_preview for u in e.user_ids if isinstance(u, Role)]
     # Whoever does today's duty is usually up only after the plan ends; say so below it.
     later = [
         r
-        for r in dict.fromkeys(replace(u, did_it=True) for u in shown if not u.did_it)
-        if r not in shown
+        for r in dict.fromkeys(replace(u, did_it=True) for u in roles if not u.did_it)
+        if r not in roles
     ]
     return render(
         request,
         "dashboard.html",
         user,
-        kitchen=duty_card_ctx(kitchen, Duty.kitchen, user),
-        trash=duty_card_ctx(trash, Duty.trash, user),
+        cards=[duty_card_ctx(slot, duty, user) for duty, slot in slots.items()],
         kitchen_preview=kitchen_preview,
         kitchen_later=later,
         trash_preview=await duties.preview(session, Duty.trash, tomorrow, horizon),
-        users_by_id=await users_by_id(session),
+        users_by_id={u.id: u for u in await session.scalars(select(User))},
     )
 
 
@@ -265,7 +276,7 @@ async def me(request: Request, session: Session, user: CurrentUser):
     my_strikes = await session.scalars(
         select(Strike).where(Strike.user_id == user.id).order_by(Strike.created_at.desc())
     )
-    history = await session.scalars(
+    recent_duties = await session.scalars(
         select(Assignment)
         .join(Assignment.slot)
         .where(Assignment.user_id == user.id)
@@ -279,7 +290,7 @@ async def me(request: Request, session: Session, user: CurrentUser):
         user,
         aways=list(aways),
         strikes=list(my_strikes),
-        history=list(history),
+        recent_duties=list(recent_duties),
     )
 
 
@@ -304,8 +315,8 @@ async def add_away(
 @router.post("/me/away/{away_id}/delete")
 async def delete_away(request: Request, session: Session, user: CurrentUser, away_id: int):
     """Delete an away period (your own, or anyone's as Flursprecher)."""
-    away = await session.get(AwayPeriod, away_id)
-    if away is None or (away.user_id != user.id and not user.is_admin):
+    away = await get_or_404(session, AwayPeriod, away_id)
+    if away.user_id != user.id and not user.is_admin:
         raise HTTPException(404)
     await users.remove_away(session, away)
     await session.commit()
@@ -373,18 +384,15 @@ async def stats(request: Request, session: Session, user: OptionalUser):
     """Per resident: duties done and missed, debt and strikes; visible without login."""
     all_users = await users.list_users(session)
     balances = {d: await duties.load_balances(session, d) for d in Duty}
-    rows = (
-        await session.execute(
-            select(Assignment.user_id, Slot.duty, Slot.is_penalty, Assignment.status).join(
-                Assignment.slot
-            )
+    rows = await session.execute(
+        select(Assignment.user_id, Slot.duty, Slot.is_penalty, Assignment.status).join(
+            Assignment.slot
         )
-    ).all()
+    )
     # (user id, duty, status) -> number of assignments; penalty weeks count as "penalty".
-    counts: dict[tuple, int] = {}
-    for uid, duty, is_penalty, status in rows:
-        key = (uid, duty, "penalty" if is_penalty else status)
-        counts[key] = counts.get(key, 0) + 1
+    counts = Counter(
+        (uid, duty, "penalty" if is_penalty else status) for uid, duty, is_penalty, status in rows
+    )
     active = {u.id: len(await strikes.active_strikes(session, u.id)) for u in all_users}
     return render(
         request,
@@ -471,14 +479,6 @@ async def admin_create_user(
     return redirect("/admin")
 
 
-async def _get_user(session: AsyncSession, user_id: int) -> User:
-    """The user, or a 404 page."""
-    target = await session.get(User, user_id)
-    if target is None:
-        raise HTTPException(404)
-    return target
-
-
 @router.post("/admin/users/{user_id}/edit")
 async def admin_edit_user(
     request: Request,
@@ -491,7 +491,7 @@ async def admin_edit_user(
     is_admin: Annotated[bool, Form()] = False,
 ):
     """Change a resident's name, room, password or admin role (not your own role)."""
-    target = await _get_user(session, user_id)
+    target = await get_or_404(session, User, user_id)
     if password and len(password) < auth.MIN_PASSWORD_LENGTH:
         flash(request, auth.PASSWORD_TOO_SHORT, "error")
         return redirect("/admin")
@@ -514,7 +514,7 @@ async def admin_edit_user(
 @router.post("/admin/users/{user_id}/active")
 async def admin_toggle_active(request: Request, session: Session, user: AdminUser, user_id: int):
     """Pause or resume a resident."""
-    target = await _get_user(session, user_id)
+    target = await get_or_404(session, User, user_id)
     await users.set_active(session, target, not target.active, settings.today())
     await session.commit()
     flash(request, f"{target.display_name} ist jetzt {'aktiv' if target.active else 'inaktiv'}")
@@ -524,7 +524,7 @@ async def admin_toggle_active(request: Request, session: Session, user: AdminUse
 @router.post("/admin/users/{user_id}/delete")
 async def admin_delete_user(request: Request, session: Session, user: AdminUser, user_id: int):
     """Delete a resident who moved out (not yourself)."""
-    target = await _get_user(session, user_id)
+    target = await get_or_404(session, User, user_id)
     if target.id == user.id:
         flash(request, "Du kannst dich nicht selbst löschen", "error")
         return redirect("/admin")
@@ -544,7 +544,7 @@ async def admin_issue_strike(
     reason: Annotated[str, Form()],
 ):
     """Give a strike by hand."""
-    target = await _get_user(session, user_id)
+    target = await get_or_404(session, User, user_id)
     await strikes.issue(
         session,
         user_id=target.id,
@@ -560,9 +560,7 @@ async def admin_issue_strike(
 @router.post("/admin/strikes/{strike_id}/revoke")
 async def admin_revoke_strike(request: Request, session: Session, user: AdminUser, strike_id: int):
     """Take a strike back."""
-    strike = await session.get(Strike, strike_id)
-    if strike is None:
-        raise HTTPException(404)
+    strike = await get_or_404(session, Strike, strike_id)
     await strikes.revoke(session, strike, settings.now())
     await session.commit()
     flash(request, "Strike zurückgenommen")
@@ -589,8 +587,7 @@ async def admin_dispute(request: Request, session: Session, user: AdminUser, ass
         a = await duties.get_assignment(session, assignment_id)
         await duties.dispute(session, a, user, settings.now())
         await session.commit()
-        name = a.user.display_name if a.user else "ehemalig"
-        flash(request, f"Beanstandet, {name} bekommt einen Strike")
+        flash(request, f"Beanstandet, {display_name(a.user)} bekommt einen Strike")
     except DutyError as e:
         flash(request, str(e), "error")
     return redirect(safe_next(request.query_params.get("next") or "/history"))

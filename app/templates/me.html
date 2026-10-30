@@ -13,7 +13,7 @@
     </form>
     {% for a in aways %}
       <div class="person">
-        <span>{{ a.start_date.strftime("%d.%m.%Y") }} – {{ a.end_date.strftime("%d.%m.%Y") }}</span>
+        <span>{{ a.start_date|long_date }} – {{ a.end_date|long_date }}</span>
         <form method="post" action="/me/away/{{ a.id }}/delete" class="inline">
           <button class="danger">Löschen</button>
         </form>
@@ -49,7 +49,7 @@
 <h2>Meine letzten Dienste</h2>
 <div class="table-wrap"><table>
   <tr><th>Datum</th><th>Dienst</th><th class="end">Status</th></tr>
-  {% for a in history %}
+  {% for a in recent_duties %}
     <tr>
       <td>{{ a.slot.start_date|weekday }} {{ a.slot.start_date|short_date }}{% if a.slot.end_date != a.slot.start_date %}–{{ a.slot.end_date|short_date }}{% endif %}</td>
       <td>{{ a.slot.duty.label }}{% if a.slot.is_penalty %} <span class="penalty">(Strafe)</span>{% endif %}</td>
