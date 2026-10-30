@@ -418,6 +418,22 @@ async def test_understaffed_slot_is_topped_up(session):
     assert len((await duties.get_slot(session, Duty.trash, MONDAY)).assignments) == 1
 
 
+async def test_excusing_a_disputed_duty_clears_the_dispute(session, client):
+    people = await make_users(session, n=4)
+    admin = people[0]
+    first, _, claimer, _ = await assign_kitchen_pair(session, settings.today())
+    await duties.mark_duty_done(session, first, claimer, settings.now())
+    await duties.dispute_duty(session, first, admin, settings.now())
+    await duties.excuse_duty(session, first, admin, settings.now())
+    await session.commit()
+
+    assert first.status is Status.excused and first.disputed_at is None
+    assert await strikes.get_active_strikes(session, claimer.id) == []
+    await log_in(client, "p2")
+    text = (await client.get("/history")).text
+    assert "entschuldigt" in text and "beanstandet" not in text
+
+
 async def test_history_page_and_dispute(session, client):
     await make_users(session, n=4)
     first, _, p1, _ = await assign_kitchen_pair(session, settings.today())

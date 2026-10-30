@@ -313,6 +313,7 @@ async def excuse_duty(session: AsyncSession, a: Assignment, actor: User, now: da
     a.status = Status.excused
     a.completed_at = now
     a.completed_by_id = actor.id
+    a.disputed_at = None
     await session.flush()
 
 
