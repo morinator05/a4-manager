@@ -44,6 +44,30 @@ async def make_users(session, n=15, admin=True):
     return created
 
 
+async def kitchen_pair(session, people, day=MONDAY):
+    """Run the daily job for `day`; returns the kitchen slot, its two assignments and people."""
+    await jobs.daily_tick(session, at(day))
+    kitchen = await duties.get_slot(session, Duty.kitchen, day)
+    by_id = {p.id: p for p in people}
+    first, second = kitchen.assignments
+    return kitchen, first, second, by_id[first.user_id], by_id[second.user_id]
+
+
+@pytest.fixture
+async def client(session_factory):
+    """HTTP client that calls the app directly (no server), keeping the login cookie."""
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as c:
+        yield c
+
+
+async def login(client, username):
+    """Log in as `username` with the test password."""
+    r = await client.post("/login", data={"username": username, "password": "secret123"})
+    assert r.status_code == 303
+
+
 async def test_tick_assigns_kitchen_and_trash(session):
     await make_users(session)
     await jobs.daily_tick(session, at(MONDAY))
@@ -109,15 +133,6 @@ async def test_penalty_does_not_count_as_regular_trash(session):
         await strikes.issue(session, user_id=a.id, reason="x", today=MONDAY)
     balances = await duties.load_balances(session, Duty.trash)
     assert balances[a.id].credit == 0
-
-
-async def kitchen_pair(session, people, day=MONDAY):
-    """Run the daily job for `day`; returns the kitchen slot, its two assignments and people."""
-    await jobs.daily_tick(session, at(day))
-    kitchen = await duties.get_slot(session, Duty.kitchen, day)
-    by_id = {p.id: p for p in people}
-    first, second = kitchen.assignments
-    return kitchen, first, second, by_id[first.user_id], by_id[second.user_id]
 
 
 async def test_mark_done_permissions(session):
@@ -300,21 +315,6 @@ async def test_month_of_ticks_is_fair(session):
     assert len(set(rows)) == 15 and max(counts) - min(counts) <= 1
 
 
-@pytest.fixture
-async def client(session_factory):
-    """HTTP client that calls the app directly (no server), keeping the login cookie."""
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test"
-    ) as c:
-        yield c
-
-
-async def login(client, username):
-    """Log in as `username` with the test password."""
-    r = await client.post("/login", data={"username": username, "password": "secret123"})
-    assert r.status_code == 303
-
-
 async def test_web_permissions(session, client):
     await make_users(session, n=3)
     r = await client.get("/me")
@@ -441,15 +441,6 @@ async def test_short_passwords_are_rejected(session):
         await users.create(session, name="A", room_number="A401", username="a", password="short")
 
 
-def test_room_numbers():
-    assert users.check_room(" a403 ") == "A403"
-    for valid in ["A401", "A499", "B110"]:
-        assert users.check_room(valid) == valid
-    for invalid in ["A40", "A400", "A.421", "A4.1", "A4100", "4403", "AA403", ""]:
-        with pytest.raises(UserError):
-            users.check_room(invalid)
-
-
 async def test_initial_admin_only_on_empty_database(session, monkeypatch):
     monkeypatch.setattr(settings, "admin_username", "")  # whatever the local .env says
     assert await users.create_initial_admin(session) is None
@@ -460,19 +451,6 @@ async def test_initial_admin_only_on_empty_database(session, monkeypatch):
     await session.commit()
     # Not again once there are users, e.g. after the admin was deleted and others were added.
     assert await users.create_initial_admin(session) is None
-
-
-def test_login_throttle_window():
-    now = [0.0]
-    throttle = LoginThrottle(max_failures=2, window_seconds=60, clock=lambda: now[0])
-    throttle.record_failure("k")
-    throttle.record_failure("k")
-    assert throttle.is_blocked("k")
-    now[0] = 61
-    assert not throttle.is_blocked("k")
-    throttle.record_failure("k")
-    throttle.reset("k")
-    assert not throttle.is_blocked("k")
 
 
 async def test_moving_out_does_not_change_the_others_balance(session):

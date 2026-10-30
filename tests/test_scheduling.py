@@ -22,6 +22,25 @@ def people(n: int) -> list[Candidate]:
     return [Candidate(id=i, room=f"A4.{i}") for i in range(1, n + 1)]
 
 
+def run(cands, n_days, start=START, miss_on=None, balances=None, claimer=None):
+    """Day-by-day like the real system: one of the picked people claims the job.
+
+    On `miss_on` nobody does it. Returns the balances, the picks and who did each day.
+    """
+    balances = {} if balances is None else balances
+    claimer = claimer or (lambda picked: picked[0])
+    picks, doers = [], []
+    for d, _ in days(n_days, start):
+        [picked] = plan(balances, cands, [(d, d)], 2)
+        accrue(balances, [c.id for c in cands if c.is_available(d, d)])
+        doer = None if d == miss_on or not picked else claimer(picked)
+        if doer is not None:
+            credit(balances, doer, d)
+        picks.append(picked)
+        doers.append(doer)
+    return balances, picks, doers
+
+
 @pytest.mark.parametrize("n_people", [3, 7, 15, 30])
 def test_counts_stay_within_one(n_people):
     result = plan({}, people(n_people), days(365), 2)
@@ -52,25 +71,6 @@ def test_away_people_are_skipped_and_not_charged():
     counts = Counter(uid for picked in result for uid in picked)
     present_days = 180 - len(away_days)
     assert abs(counts[1] - present_days * 2 / 15) <= 1.5
-
-
-def run(cands, n_days, start=START, miss_on=None, balances=None, claimer=None):
-    """Day-by-day like the real system: one of the picked people claims the job.
-
-    On `miss_on` nobody does it. Returns the balances, the picks and who did each day.
-    """
-    balances = {} if balances is None else balances
-    claimer = claimer or (lambda picked: picked[0])
-    picks, doers = [], []
-    for d, _ in days(n_days, start):
-        [picked] = plan(balances, cands, [(d, d)], 2)
-        accrue(balances, [c.id for c in cands if c.is_available(d, d)])
-        doer = None if d == miss_on or not picked else claimer(picked)
-        if doer is not None:
-            credit(balances, doer, d)
-        picks.append(picked)
-        doers.append(doer)
-    return balances, picks, doers
 
 
 def test_done_counts_stay_even_with_random_claimer():
