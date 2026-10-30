@@ -52,6 +52,7 @@ SAME_DAY = 0.85
 
 
 def make_datetime(day: date, hour: int, minute: int = 0) -> datetime:
+    """`day` at `hour:minute` in the app's time zone."""
     return datetime.combine(day, time(hour, minute), settings.tz)
 
 
@@ -178,6 +179,7 @@ async def simulate_history(session: AsyncSession, days: int, rng: random.Random)
 
 
 async def main(count: int, password: str, days: int, seed: int | None) -> None:
+    """Add the test residents, optionally simulate a history, then run the daily job."""
     if count > len(FIRST_NAMES):
         sys.exit(f"At most {len(FIRST_NAMES)} residents supported")
     async with SessionLocal() as session:

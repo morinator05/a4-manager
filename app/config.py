@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     @field_validator("secret_key")
     @classmethod
     def validate_secret_key(cls, value: str) -> str:
-        """`change-me…` is the placeholder from `.env.example`."""
+        """Refuse a short key, or the `change-me…` placeholder from `.env.example`."""
         if len(value) < 32 or value.startswith("change-me"):
             raise ValueError(
                 "SECRET_KEY must be a random string of at least 32 characters, "
@@ -46,13 +46,15 @@ class Settings(BaseSettings):
 
     @cached_property
     def tz(self) -> ZoneInfo:
-        """All dates and deadlines are in this zone, not the server's."""
+        """The app's time zone: all dates and deadlines are in it, not the server's."""
         return ZoneInfo(self.timezone)
 
     def now(self) -> datetime:
+        """The current time in the app's time zone."""
         return datetime.now(self.tz)
 
     def today(self) -> date:
+        """Today's date in the app's time zone, not the server's."""
         return self.now().date()
 
 

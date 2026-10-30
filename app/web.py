@@ -200,7 +200,7 @@ async def log_in(
 
 @router.post("/logout")
 async def log_out(request: Request):
-    """Log out."""
+    """Log out and go back to the dashboard."""
     request.session.clear()
     return redirect_to("/")
 
@@ -550,7 +550,7 @@ async def issue_strike(
     user_id: Annotated[int, Form()],
     reason: Annotated[str, Form()],
 ):
-    """Give a strike by hand."""
+    """Give a strike by hand; the daily job gives the ones for missed duties."""
     target = await get_or_404(session, User, user_id)
     await strikes.issue_strike(
         session,
@@ -566,7 +566,7 @@ async def issue_strike(
 
 @router.post("/admin/strikes/{strike_id}/revoke")
 async def revoke_strike(request: Request, session: Session, user: AdminUser, strike_id: int):
-    """Take a strike back."""
+    """Take a strike back from the Flursprecher page."""
     strike = await get_or_404(session, Strike, strike_id)
     await strikes.revoke_strike(session, strike, settings.now())
     await session.commit()
@@ -589,7 +589,7 @@ async def excuse_duty(request: Request, session: Session, user: AdminUser, assig
 
 @router.post("/admin/assignments/{assignment_id}/dispute")
 async def dispute_duty(request: Request, session: Session, user: AdminUser, assignment_id: int):
-    """Marked done but not actually done: the claimer gets a strike."""
+    """Dispute a duty marked done but not done: the claimer gets a strike."""
     try:
         a = await duties.get_assignment(session, assignment_id)
         await duties.dispute_duty(session, a, user, settings.now())
@@ -602,7 +602,7 @@ async def dispute_duty(request: Request, session: Session, user: AdminUser, assi
 
 @router.post("/admin/tick")
 async def run_daily_job(request: Request, session: Session, user: AdminUser):
-    """Run the daily job now."""
+    """Run the daily job now instead of waiting for the schedule."""
     await jobs.run_daily_tick(session, settings.now())
     flash_message(request, "Tagesjob ausgeführt")
     return redirect_to("/admin")

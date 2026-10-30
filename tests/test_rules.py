@@ -202,6 +202,7 @@ async def test_preview_shows_open_pair_as_roles(session):
     first, _, p1, p2 = await get_kitchen_pair(session)
 
     async def get_shown():
+        """The user ids and roles the kitchen preview shows for the next 30 days."""
         preview = await duties.build_preview(
             session, Duty.kitchen, MONDAY + timedelta(days=1), MONDAY + timedelta(days=30)
         )

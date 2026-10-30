@@ -23,6 +23,7 @@ class DutyError(Exception):
 
 
 def get_people_per_slot(duty: Duty) -> int:
+    """How many people are put on one slot; only one of them has to do it."""
     if duty is Duty.kitchen:
         return settings.kitchen_people_per_day
     return settings.trash_people_per_week
@@ -47,6 +48,7 @@ def get_deadline(slot: Slot) -> datetime:
 
 
 async def load_candidates(session: AsyncSession) -> list[Candidate]:
+    """Load the active users with their away periods, for picking."""
     users = await session.scalars(
         select(User).where(User.active.is_(True)).options(selectinload(User.away_periods))
     )
@@ -186,6 +188,7 @@ async def replace_unavailable_people(session: AsyncSession, today: date) -> None
     rooms = {uid: c.room for uid, c in candidates.items()}
 
     def is_available(user_id: int | None, slot: Slot) -> bool:
+        """Whether the user is still active and not away during `slot`."""
         candidate = candidates.get(user_id)
         return candidate is not None and candidate.is_available(slot.start_date, slot.end_date)
 

@@ -26,6 +26,7 @@ ROOM_PATTERN = re.compile(r"[A-Z][0-9](0[1-9]|[1-9][0-9])")
 
 
 def normalize_room(room_number: str) -> str:
+    """Trim and upper-case a room number; `UserError` unless it looks like A403."""
     room_number = room_number.strip().upper()
     if not ROOM_PATTERN.fullmatch(room_number):
         raise UserError(
@@ -35,6 +36,7 @@ def normalize_room(room_number: str) -> str:
 
 
 async def list_users(session: AsyncSession) -> list[User]:
+    """All users, sorted by room number."""
     users = await session.scalars(select(User))
     return sorted(users, key=lambda u: scheduling.get_room_sort_key(u.room_number))
 

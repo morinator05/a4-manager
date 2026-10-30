@@ -29,6 +29,7 @@ class Duty(str, enum.Enum):
 
     @property
     def label(self) -> str:
+        """The German name shown in the UI."""
         return {"kitchen": "Küchendienst", "trash": "Mülldienst"}[self.value]
 
 
@@ -48,6 +49,7 @@ class Status(str, enum.Enum):
 
     @property
     def label(self) -> str:
+        """The German name shown in the UI."""
         return {
             "pending": "offen",
             "done": "erledigt",
@@ -85,11 +87,12 @@ class User(Base):
 
     @property
     def first_name(self) -> str:
+        """The first word of the name; residents are shown by first name and room."""
         return self.name.split()[0] if self.name.strip() else self.name
 
     @property
     def display_name(self) -> str:
-        """For flash messages and confirm dialogs; pages use the styled `person()` from `web.py`."""
+        """For flash messages and confirm dialogs; pages use `render_person()` in `web.py`."""
         return f"{self.first_name} ({self.room_number})"
 
 

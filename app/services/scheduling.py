@@ -46,11 +46,12 @@ class Balance:
 
     @property
     def debt(self) -> Fraction:
+        """Work still owed: the expected share minus the jobs done."""
         return self.expected - self.credit
 
     @property
     def priority(self) -> Fraction:
-        """The highest are picked next."""
+        """Debt minus open shares; the highest are picked next."""
         return self.debt - self.pending
 
 
@@ -63,6 +64,7 @@ class Candidate:
     away: tuple[tuple[date, date], ...] = ()
 
     def is_available(self, start: date, end: date) -> bool:
+        """Whether the user isn't away on any day from `start` to `end`."""
         return not is_away_during(self.away, start, end)
 
 
@@ -120,6 +122,7 @@ def pick_most_indebted(
     """Choose the `n` eligible users that owe the most. Does not modify balances."""
 
     def key(uid: int):
+        """Sort key for picking; lowest comes first."""
         b = balances.get(uid, Balance())
         # Highest priority first; on a tie, whoever cleaned longest ago (never = first), then
         # by room, so the result is always the same for the same input.
@@ -136,7 +139,7 @@ def credit_done_job(balances: dict[int, Balance], uid: int, on: date) -> None:
 
 
 def reserve_open_share(balances: dict[int, Balance], uid: int, amount: Fraction) -> None:
-    """Book `amount` of a not yet done job for `uid`."""
+    """Book `amount` of a job that isn't done yet for `uid` (see `Balance.pending`)."""
     balances.setdefault(uid, Balance()).pending += amount
 
 

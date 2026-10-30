@@ -20,7 +20,7 @@ class LoginRequired(Exception):
 
 
 async def get_optional_user(request: Request, session: Session) -> User | None:
-    """A login session of a since deleted user is cleared."""
+    """The logged-in user, or None; the login of a since deleted user is cleared."""
     user_id = request.session.get("user_id")
     if user_id is None:
         return None
@@ -31,12 +31,14 @@ async def get_optional_user(request: Request, session: Session) -> User | None:
 
 
 async def require_user(user: Annotated[User | None, Depends(get_optional_user)]) -> User:
+    """The logged-in user; anyone else is sent to the login page."""
     if user is None:
         raise LoginRequired
     return user
 
 
 async def require_admin(user: Annotated[User, Depends(require_user)]) -> User:
+    """The logged-in Flursprecher; everyone else gets a 403 page."""
     if not user.is_admin:
         raise HTTPException(status_code=403, detail="Nur für den Flursprecher")
     return user

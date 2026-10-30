@@ -59,6 +59,7 @@ async def issue_strike(
 
 
 async def revoke_strike(session: AsyncSession, strike: Strike, now: datetime) -> None:
+    """Take a strike back, so it no longer counts."""
     strike.revoked_at = now
     await session.flush()
 

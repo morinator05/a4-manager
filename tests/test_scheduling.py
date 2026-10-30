@@ -94,6 +94,7 @@ def test_lazy_person_is_picked_more_until_they_clean():
     lazy = 1
 
     def pick_claimer(picked):
+        """Let anyone but the lazy person claim the job, if there is someone."""
         others = [p for p in picked if p != lazy]
         return others[0] if others else picked[0]
 

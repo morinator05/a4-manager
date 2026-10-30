@@ -12,6 +12,7 @@ from app.services import users
 
 
 async def main() -> None:
+    """Ask for the Flursprecher's details and create the account."""
     name = input("Name: ")
     room = input("Zimmer: ")
     username = input("Benutzername: ")

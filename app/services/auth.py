@@ -21,10 +21,12 @@ def normalize_username(username: str) -> str:
 
 
 def hash_password(password: str) -> str:
+    """Hash a password for storing (Argon2id, with a random salt)."""
     return _hasher.hash(password)
 
 
 def verify_password(password: str, password_hash: str) -> bool:
+    """Check a password against its stored hash."""
     return _hasher.verify(password, password_hash)
 
 

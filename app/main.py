@@ -25,7 +25,7 @@ log = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Creates the first Flursprecher if configured, then runs the daily job once on startup
+    """On startup create the first Flursprecher if configured, then run the daily job now
     and on a schedule while the app is up."""
     async with SessionLocal() as session:
         # Invalid ADMIN_* settings stop the startup, like a missing SECRET_KEY does.

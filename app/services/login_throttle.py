@@ -23,18 +23,22 @@ class LoginThrottle:
         window_seconds: float = WINDOW_SECONDS,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
+        """Start with no failures; `clock` returns seconds."""
         self._max_failures = max_failures
         self._window_seconds = window_seconds
         self._clock = clock
         self._failures: dict[str, list[float]] = {}
 
     def is_blocked(self, key: str) -> bool:
+        """Whether `key` failed too often recently to try again."""
         return len(self._get_recent_failures(key)) >= self._max_failures
 
     def record_failure(self, key: str) -> None:
+        """Count a failed login for `key`."""
         self._failures.setdefault(key, []).append(self._clock())
 
     def reset_failures(self, key: str) -> None:
+        """Forget the failures of `key`, after a successful login."""
         self._failures.pop(key, None)
 
     def _get_recent_failures(self, key: str) -> list[float]:
