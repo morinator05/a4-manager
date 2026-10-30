@@ -15,6 +15,11 @@ _hasher = PasswordHash.recommended()
 _DUMMY_HASH = _hasher.hash("no-such-user")
 
 
+def normalize_username(username: str) -> str:
+    """Usernames are case-insensitive and stored in lower case."""
+    return username.strip().lower()
+
+
 def hash_password(password: str) -> str:
     return _hasher.hash(password)
 
@@ -24,8 +29,8 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 
 async def authenticate(session: AsyncSession, username: str, password: str) -> User | None:
-    """The user with these credentials, or None. Usernames are case-insensitive."""
-    user = await session.scalar(select(User).where(User.username == username.strip().lower()))
+    """The user with these credentials, or None."""
+    user = await session.scalar(select(User).where(User.username == normalize_username(username)))
     if user is None:
         verify_password(password, _DUMMY_HASH)
         return None

@@ -166,7 +166,7 @@ async def login(
 ):
     """Log in. Too many failed attempts block the username from that IP for a while."""
     client_ip = request.client.host if request.client else "unknown"
-    throttle_key = f"{username.strip().lower()}@{client_ip}"
+    throttle_key = f"{auth.normalize_username(username)}@{client_ip}"
     if login_throttle.is_blocked(throttle_key):
         flash(request, "Zu viele Fehlversuche, bitte in 15 Minuten nochmal versuchen", "error")
         return redirect(f"/login?next={safe_next(next)}")

@@ -9,7 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models import Assignment, AwayPeriod, Slot, Status, User
 from app.services import duties, scheduling
-from app.services.auth import MIN_PASSWORD_LENGTH, PASSWORD_TOO_SHORT, hash_password
+from app.services.auth import (
+    MIN_PASSWORD_LENGTH,
+    PASSWORD_TOO_SHORT,
+    hash_password,
+    normalize_username,
+)
 
 
 class UserError(Exception):
@@ -44,8 +49,9 @@ async def create(
     is_admin: bool = False,
 ) -> User:
     """Add a resident. Their duty balance starts at zero."""
-    username = username.strip().lower()
-    if not (name.strip() and room_number.strip() and username and password):
+    name = name.strip()
+    username = normalize_username(username)
+    if not (name and room_number.strip() and username and password):
         raise UserError("Alle Felder müssen ausgefüllt sein")
     room_number = check_room(room_number)
     if len(password) < MIN_PASSWORD_LENGTH:
@@ -53,7 +59,7 @@ async def create(
     if await session.scalar(select(User).where(User.username == username)):
         raise UserError(f"Benutzername „{username}“ ist schon vergeben")
     user = User(
-        name=name.strip(),
+        name=name,
         room_number=room_number,
         username=username,
         password_hash=hash_password(password),
