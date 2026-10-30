@@ -214,7 +214,7 @@ async def show_dashboard(request: Request, session: Session, user: OptionalUser)
     today = settings.today()
     slots = {duty: await duties.get_slot(session, duty, today) for duty in Duty}
     if None in slots.values():
-        await jobs.run_daily_job(session, settings.now())
+        await jobs.fill_missing_slots(session, today)
         slots = {duty: await duties.get_slot(session, duty, today) for duty in Duty}
 
     tomorrow = today + timedelta(days=1)

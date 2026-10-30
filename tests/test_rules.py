@@ -352,6 +352,26 @@ async def test_month_of_daily_jobs_is_fair(session):
     assert len(counts) == 15 and max(counts) - min(counts) <= 1
 
 
+async def test_dashboard_fills_in_slots_but_gives_no_strikes(session, client):
+    await make_users(session)
+    two_days_ago = settings.today() - timedelta(days=2)
+    await jobs.run_daily_job(session, make_datetime(two_days_ago))
+    overdue = await duties.get_slot(session, Duty.kitchen, two_days_ago)
+
+    assert (await client.get("/")).status_code == 200
+    assert await duties.get_slot(session, Duty.kitchen, settings.today()) is not None
+    await session.refresh(overdue, ["assignments"])
+    assert all(a.status is Status.pending for a in overdue.assignments)
+    assert not any(
+        [await strikes.get_active_strikes(session, a.user_id) for a in overdue.assignments]
+    )
+
+    # Striking stays with the daily job.
+    await jobs.run_daily_job(session, settings.now())
+    await session.refresh(overdue, ["assignments"])
+    assert all(a.status is Status.missed for a in overdue.assignments)
+
+
 async def test_web_permissions(session, client):
     await make_users(session, n=3)
     r = await client.get("/me")
