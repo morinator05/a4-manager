@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "partials/macros.html" import slot_dates %}
+{% from "partials/macros.html" import slot_dates, status_badge, penalty_tag with context %}
 {% block content %}
 <h1>Verlauf {{ render_help_link("status") }}</h1>
 <p class="muted">{{ since|long_date }} bis {{ until|long_date }}</p>
@@ -19,10 +19,10 @@
     {% set disputed = slot.assignments|selectattr("disputed_at")|first %}
     <tr>
       <td>{{ slot_dates(slot) }}
-          {% if slot.is_penalty %}<span class="penalty">(Strafe)</span>{% endif %}</td>
+          {% if slot.is_penalty %}{{ penalty_tag() }}{% endif %}</td>
       <td>
         {% for a in slot.assignments %}
-          <div class="assignee"><span>{{ render_person(a.user) }}</span> {% include "partials/status.html" %}</div>
+          <div class="assignee"><span>{{ render_person(a.user) }}</span> {{ status_badge(a) }}</div>
         {% else %}<span class="muted">–</span>{% endfor %}
       </td>
       <td>

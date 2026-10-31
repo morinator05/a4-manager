@@ -13,13 +13,13 @@ from sqlalchemy.exc import IntegrityError
 
 from app.config import settings
 from app.main import app
-from app.models import Assignment, Duty, Slot, Status, User
-from app.services import duties, jobs, strikes, users
+from app.models import Assignment, AwayPeriod, Duty, Slot, Status, Strike, User
+from app.services import auth, duties, jobs, strikes, users
 from app.services.duties import DutyError
 from app.services.login_throttle import LoginThrottle
 from app.services.scheduling import Role
 from app.services.users import UserError
-from app.web import render_person_html
+from app.web import render_person
 
 MONDAY = date(2026, 11, 2)
 PASSWORD = "secret123"
@@ -240,7 +240,7 @@ async def test_preview_shows_open_pair_as_roles(session):
         preview = await duties.build_preview(
             session, Duty.kitchen, MONDAY + timedelta(days=1), MONDAY + timedelta(days=30)
         )
-        return [u for e in preview for u in e.user_ids]
+        return [u for e in preview for u in e.people]
 
     before = await get_shown()
     # Whoever doesn't clean is up again tomorrow; whoever does, much later.
@@ -299,32 +299,33 @@ async def test_admin_marking_missed_done_revokes_strike(session):
     assert len(await strikes.get_active_strikes(session, a.user_id)) == 0
 
 
-async def test_away_replaces_pending_assignment(session):
+async def test_away_keeps_running_duty_but_skips_later_ones(session):
     await make_users(session)
     await jobs.run_daily_job(session, make_datetime(MONDAY))
     kitchen = await duties.get_slot(session, Duty.kitchen, MONDAY)
     leaving = kitchen.assignments[0].user
     leaving_id = leaving.id
 
+    # Reporting an absence at the last minute doesn't get you out of today's duty.
     await users.add_away_period(session, leaving, MONDAY, MONDAY + timedelta(days=3), MONDAY)
     await session.commit()
     kitchen = await duties.get_slot(session, Duty.kitchen, MONDAY)
-    ids = [a.user_id for a in kitchen.assignments]
-    assert len(ids) == 2 and leaving_id not in ids
+    assert leaving_id in [a.user_id for a in kitchen.assignments]
 
     preview = await duties.build_preview(
         session, Duty.kitchen, MONDAY + timedelta(days=1), MONDAY + timedelta(days=3)
     )
-    assert all(leaving_id not in e.user_ids for e in preview)
+    assert all(leaving_id not in e.people for e in preview)
 
 
 async def test_delete_user_keeps_history_and_replaces(session):
-    await make_users(session)
+    people = await make_users(session)
     await jobs.run_daily_job(session, make_datetime(MONDAY))
     trash = await duties.get_slot(session, Duty.trash, MONDAY)
     gone = trash.assignments[0].user
     gone_id = gone.id
-    await users.delete_user(session, gone, MONDAY)
+    admin = next(p for p in people if p is not gone)
+    await users.delete_user(session, gone, admin, MONDAY)
     await session.commit()
     trash = await duties.get_slot(session, Duty.trash, MONDAY)
     assert [a.user_id for a in trash.assignments] != [gone_id]
@@ -443,11 +444,7 @@ async def test_history_page_and_dispute(session, client):
     assert (await client.get("/history")).status_code == 303  # login required
     await log_in(client, "p2")
     r = await client.get("/history")
-    assert (
-        r.status_code == 200
-        and str(render_person_html(p1)) in r.text
-        and "Beanstanden" not in r.text
-    )
+    assert r.status_code == 200 and str(render_person(p1)) in r.text and "Beanstanden" not in r.text
     assert (await client.post(f"/admin/assignments/{first.id}/dispute")).status_code == 403
 
     await client.post("/logout")
@@ -547,7 +544,7 @@ async def test_moving_out_does_not_change_the_others_balance(session):
     staying_ids = [p.id for p in people if p is not leaving]
     before = await duties.load_balances(session, Duty.kitchen)
     # Move out on the last scheduled day, so no new slot changes the balances.
-    await users.delete_user(session, leaving, day - timedelta(days=1))
+    await users.delete_user(session, leaving, people[0], day - timedelta(days=1))
     await session.commit()
     after = await duties.load_balances(session, Duty.kitchen)
     assert [after[uid].debt for uid in staying_ids] == [before[uid].debt for uid in staying_ids]
@@ -570,7 +567,7 @@ async def test_moving_out_drops_open_penalty_week(session):
         await strikes.issue_strike(session, user_id=leaving.id, reason="x", today=MONDAY)
     await session.commit()
 
-    await users.delete_user(session, leaving, MONDAY)
+    await users.delete_user(session, leaving, people[0], MONDAY)
     await session.commit()
     await jobs.run_daily_job(session, make_datetime(MONDAY + timedelta(days=7)))
     slot = await duties.get_slot(session, Duty.trash, MONDAY + timedelta(days=7))
@@ -581,8 +578,8 @@ async def test_own_name_is_highlighted(session, client):
     people = await make_users(session, n=3)
     await log_in(client, "p2")
     text = (await client.get("/stats")).text
-    assert str(render_person_html(people[1], is_me=True)) in text
-    assert str(render_person_html(people[0])) in text
+    assert str(render_person(people[1], is_me=True)) in text
+    assert str(render_person(people[0])) in text
 
 
 async def test_stats_colour_strikes(session, client):
@@ -595,3 +592,251 @@ async def test_stats_colour_strikes(session, client):
     assert '"strikes ok">0 / 3' in text
     assert '"strikes warn">1 / 3' in text
     assert '"strikes bad">2 / 3' in text
+
+
+def freeze_time(monkeypatch, now: datetime) -> None:
+    """Make `settings.now()` and `settings.today()` return `now`, for the web pages."""
+    monkeypatch.setattr(type(settings), "now", lambda self: now)
+
+
+async def give_strikes(session, user, n):
+    """`n` strikes by hand, on `MONDAY`."""
+    for _ in range(n):
+        await strikes.issue_strike(session, user_id=user.id, reason="x", today=MONDAY)
+    await session.commit()
+
+
+async def get_penalty_weeks(session, user_id):
+    """The user's penalty slots, by date."""
+    return list(
+        await session.scalars(
+            select(Slot)
+            .join(Slot.assignments)
+            .where(Slot.is_penalty.is_(True), Assignment.user_id == user_id)
+            .order_by(Slot.start_date)
+        )
+    )
+
+
+async def test_marking_the_partner_done_keeps_the_dispute_strike(session):
+    people = await make_users(session)
+    admin = people[0]
+    await users.add_away_period(session, admin, MONDAY, MONDAY, MONDAY)
+    first, second, claimer, _ = await assign_kitchen_pair(session)
+    await duties.mark_duty_done(session, first, claimer, make_datetime(MONDAY, 20))
+    await duties.dispute_duty(session, first, admin, make_datetime(MONDAY, 21))
+    await duties.mark_duty_done(session, second, admin, make_datetime(MONDAY, 22))
+    await session.commit()
+
+    assert first.status is Status.missed and first.disputed_at is not None
+    assert second.status is Status.done
+    assert len(await strikes.get_active_strikes(session, claimer.id)) == 1
+
+
+async def test_only_open_or_missed_duties_can_be_excused(session):
+    people = await make_users(session)
+    admin = people[0]
+    await users.add_away_period(session, admin, MONDAY, MONDAY, MONDAY)
+    first, second, claimer, _ = await assign_kitchen_pair(session)
+    await duties.mark_duty_done(session, first, claimer, make_datetime(MONDAY, 20))
+    for a in (first, second):  # done and covered
+        with pytest.raises(DutyError):
+            await duties.excuse_duty(session, a, admin, make_datetime(MONDAY, 21))
+    assert first.status is Status.done
+
+
+async def test_disputing_twice_at_once_gives_one_strike(session, session_factory):
+    people = await make_users(session)
+    admin = people[0]
+    await users.add_away_period(session, admin, MONDAY, MONDAY, MONDAY)
+    first, _, claimer, _ = await assign_kitchen_pair(session)
+    await duties.mark_duty_done(session, first, claimer, make_datetime(MONDAY, 20))
+    await session.commit()
+
+    async def dispute():
+        """Dispute in its own session, like a second browser tab."""
+        async with session_factory() as s:
+            a = await duties.get_assignment(s, first.id)
+            await duties.dispute_duty(s, a, await s.get(User, admin.id), make_datetime(MONDAY, 21))
+            await s.commit()
+
+    results = await asyncio.gather(dispute(), dispute(), return_exceptions=True)
+    assert sorted(type(r).__name__ for r in results) == ["DutyError", "NoneType"]
+    assert len(await strikes.get_active_strikes(session, claimer.id)) == 1
+
+
+async def test_yesterdays_duty_can_be_marked_done_until_the_deadline(session, client, monkeypatch):
+    await make_users(session)
+    first, _, p1, _ = await assign_kitchen_pair(session)
+    await session.commit()
+    freeze_time(monkeypatch, make_datetime(MONDAY + timedelta(days=1), 8))
+
+    await log_in(client, p1.username)
+    r = await client.get("/")
+    assert f'id="card-{first.slot_id}"' in r.text and "noch offen" in r.text
+    r = await client.post(f"/assignments/{first.id}/done?card=1", headers={"HX-Request": "true"})
+    assert r.status_code == 200 and "Erledigt von" in r.text
+
+    # After the deadline the card is gone (the daily job marks it missed).
+    freeze_time(monkeypatch, make_datetime(MONDAY + timedelta(days=2), 13))
+    assert f'id="card-{first.slot_id}"' not in (await client.get("/")).text
+
+
+async def test_late_done_cancels_the_penalty_week_of_its_strike(session):
+    people = await make_users(session)
+    admin = people[0]
+    first, _, p1, _ = await assign_kitchen_pair(session)
+    await give_strikes(session, p1, 2)
+    # The missed duty gives the third strike, and with it a penalty week.
+    await jobs.run_daily_job(session, make_datetime(MONDAY + timedelta(days=1), 13))
+    assert len(await get_penalty_weeks(session, p1.id)) == 1
+
+    first = await duties.get_assignment(session, first.id)
+    await duties.mark_duty_done(
+        session, first, admin, make_datetime(MONDAY + timedelta(days=1), 14)
+    )
+    await session.commit()
+    assert await get_penalty_weeks(session, p1.id) == []
+    assert len(await strikes.get_active_strikes(session, p1.id)) == 2
+
+
+async def test_revoking_a_paid_off_strike_cancels_the_penalty_week(session, client):
+    people = await make_users(session, n=4)
+    await give_strikes(session, people[1], 3)
+    [penalty] = await get_penalty_weeks(session, people[1].id)
+    assert penalty.start_date > settings.today()
+    strike = (await session.scalars(select(Strike).where(Strike.user_id == people[1].id))).first()
+
+    await log_in(client, "p1")
+    r = await client.post(f"/admin/strikes/{strike.id}/revoke")
+    assert r.status_code == 303
+    assert await get_penalty_weeks(session, people[1].id) == []
+    assert len(await strikes.get_active_strikes(session, people[1].id)) == 2
+
+
+async def test_absence_moves_the_penalty_week(session):
+    people = await make_users(session)
+    await jobs.run_daily_job(session, make_datetime(MONDAY))
+    await give_strikes(session, people[1], 3)
+    [penalty] = await get_penalty_weeks(session, people[1].id)
+    week = penalty.start_date
+
+    await users.add_away_period(session, people[1], week, week + timedelta(days=2), MONDAY)
+    await session.commit()
+    [moved] = await get_penalty_weeks(session, people[1].id)
+    assert moved.start_date > week
+    assert await strikes.get_active_strikes(session, people[1].id) == []
+
+
+async def test_pausing_cancels_the_penalty_week_until_resumed(session):
+    people = await make_users(session)
+    await jobs.run_daily_job(session, make_datetime(MONDAY))
+    await give_strikes(session, people[1], 3)
+
+    await users.set_user_active(session, people[1], False, MONDAY)
+    await session.commit()
+    assert await get_penalty_weeks(session, people[1].id) == []
+    assert len(await strikes.get_active_strikes(session, people[1].id)) == 3
+    # A strike while paused doesn't add one either.
+    await give_strikes(session, people[1], 1)
+    assert await get_penalty_weeks(session, people[1].id) == []
+
+    await users.set_user_active(session, people[1], True, MONDAY)
+    await session.commit()
+    assert len(await get_penalty_weeks(session, people[1].id)) == 1
+    assert len(await strikes.get_active_strikes(session, people[1].id)) == 1
+
+
+async def test_paused_people_get_no_share_of_the_current_slots(session):
+    people = await make_users(session)
+    await jobs.run_daily_job(session, make_datetime(MONDAY))
+    kitchen = await duties.get_slot(session, Duty.kitchen, MONDAY)
+    picked = {a.user_id for a in kitchen.assignments}
+    idle = next(p for p in people if p.id not in picked)
+
+    await users.set_user_active(session, idle, False, MONDAY)
+    await session.commit()
+    kitchen = await duties.get_slot(session, Duty.kitchen, MONDAY)
+    await session.refresh(kitchen, ["eligible"])
+    assert idle.id not in {e.user_id for e in kitchen.eligible}
+
+
+async def test_pausing_replaces_open_duties_and_resuming_fills_in(session):
+    people = await make_users(session, n=2, admin=False)
+    await jobs.run_daily_job(session, make_datetime(MONDAY))
+    await users.set_user_active(session, people[0], False, MONDAY)
+    await session.commit()
+    kitchen = await duties.get_slot(session, Duty.kitchen, MONDAY)
+    assert [a.user_id for a in kitchen.assignments] == [people[1].id]
+
+    await users.set_user_active(session, people[0], True, MONDAY)
+    await session.commit()
+    kitchen = await duties.get_slot(session, Duty.kitchen, MONDAY)
+    assert {a.user_id for a in kitchen.assignments} == {p.id for p in people}
+
+
+async def test_dashboard_with_two_people_per_trash_week(session, client, monkeypatch):
+    monkeypatch.setattr(settings, "trash_people_per_week", 2)
+    await make_users(session, n=6)
+    r = await client.get("/")
+    assert r.status_code == 200 and "Mülldienst – Vorschau" in r.text
+
+
+async def test_trash_deadline_is_monday_noon_after_the_week(session):
+    await make_users(session)
+    await jobs.run_daily_job(session, make_datetime(MONDAY))
+    trash = await duties.get_slot(session, Duty.trash, MONDAY)
+    next_monday = MONDAY + timedelta(days=7)
+    assert duties.get_deadline(trash) == make_datetime(next_monday, settings.deadline_hour)
+
+    await jobs.run_daily_job(session, make_datetime(next_monday, settings.deadline_hour - 1))
+    await session.refresh(trash, ["assignments"])
+    assert trash.assignments[0].status is Status.pending
+    await jobs.run_daily_job(session, make_datetime(next_monday, settings.deadline_hour))
+    await session.refresh(trash, ["assignments"])
+    assert trash.assignments[0].status is Status.missed
+
+
+async def test_away_period_must_be_sensible(session):
+    [p] = await make_users(session, n=1)
+    with pytest.raises(UserError):
+        await users.add_away_period(session, p, MONDAY, MONDAY - timedelta(days=1), MONDAY)
+    with pytest.raises(UserError):
+        await users.add_away_period(
+            session, p, MONDAY - timedelta(days=5), MONDAY - timedelta(days=1), MONDAY
+        )
+
+
+async def test_nobody_can_delete_someone_elses_away_period(session, client):
+    people = await make_users(session, n=3)
+    await users.add_away_period(
+        session, people[2], MONDAY, MONDAY + timedelta(days=1), MONDAY - timedelta(days=1)
+    )
+    await session.commit()
+    [away] = (await session.scalars(select(AwayPeriod))).all()
+
+    await log_in(client, "p2")
+    await client.post(f"/me/away/{away.id}/delete")
+    assert (await session.scalars(select(AwayPeriod))).all() != []
+
+
+async def test_change_password(session):
+    [p] = await make_users(session, n=1)
+    with pytest.raises(UserError):
+        await users.change_password(session, p, "wrong-password", "new-password")
+    with pytest.raises(UserError):
+        await users.change_password(session, p, PASSWORD, "short")
+    await users.change_password(session, p, PASSWORD, "new-password")
+    assert await auth.authenticate_user(session, p.username, "new-password") == p
+
+
+async def test_flursprecher_cannot_drop_their_own_role_or_account(session, client):
+    people = await make_users(session, n=2)
+    await log_in(client, "p1")
+    await client.post(f"/admin/users/{people[0].id}/edit", data={"name": "", "room_number": ""})
+    await client.post(f"/admin/users/{people[0].id}/delete")
+    await session.refresh(people[0])
+    assert people[0].is_admin and people[0].name == "Person 1"
+
+    with pytest.raises(UserError):
+        await users.delete_user(session, people[0], people[0], MONDAY)

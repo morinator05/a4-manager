@@ -1,9 +1,10 @@
 {% extends "base.html" %}
+{% from "partials/macros.html" import preview_people with context %}
 {% block content %}
 <h1>{{ today|weekday }}, {{ today|long_date }}</h1>
 <div class="grid">
   {% for card in cards %}
-    {% with slot=card.slot, duty=card.duty, deadline=card.deadline, can_mark=card.can_mark %}
+    {% with slot=card.slot, duty=card.duty, deadline=card.deadline, can_mark=card.can_mark, today=card.today %}
       {% include "partials/duty_card.html" %}
     {% endwith %}
   {% endfor %}
@@ -17,7 +18,7 @@
       {% for e in kitchen_preview %}
         <tr>
           <td>{{ e.start|weekday }} {{ e.start|short_date }}</td>
-          <td>{% for uid in e.user_ids %}{% if uid is role %}{{ render_role(uid) }}{% else %}{{ render_person(users_by_id[uid]) }}{% endif %}{% if not loop.last %}, {% endif %}{% else %}<span class="muted">–</span>{% endfor %}</td>
+          <td>{{ preview_people(e.people, users_by_id) }}</td>
         </tr>
       {% endfor %}
       {% for r in kitchen_later %}
@@ -34,7 +35,7 @@
       {% for e in trash_preview %}
         <tr>
           <td>{{ e.start|short_date }}–{{ e.end|short_date }}</td>
-          <td>{% for uid in e.user_ids %}{{ render_person(users_by_id[uid]) }}{% else %}<span class="muted">–</span>{% endfor %}
+          <td>{{ preview_people(e.people, users_by_id) }}
               {% if e.is_penalty %}<span class="penalty">(Straf-Mülldienst)</span>{% endif %}</td>
         </tr>
       {% endfor %}

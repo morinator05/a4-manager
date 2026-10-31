@@ -5,6 +5,7 @@ from datetime import date, datetime
 
 from sqlalchemy import (
     Boolean,
+    ColumnElement,
     Date,
     DateTime,
     Enum,
@@ -13,14 +14,16 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    and_,
     func,
     text,
 )
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
-    pass
+    """Base class of all tables."""
 
 
 class Duty(str, enum.Enum):
@@ -156,8 +159,9 @@ class Assignment(Base):
     """One person put on one slot. How many per slot is set in `config.py`."""
 
     __tablename__ = "assignments"
-    # Only one person does a slot; `mark_duty_done` also locks the slot to keep it so.
+    # Only one person does a slot; `mark_duty_done` also takes the schedule lock to keep it so.
     __table_args__ = (
+        UniqueConstraint("slot_id", "user_id"),
         Index(
             "uq_assignments_one_done_per_slot",
             "slot_id",
@@ -210,7 +214,13 @@ class Strike(Base):
     user: Mapped[User] = relationship(back_populates="strikes", foreign_keys=[user_id])
     issued_by: Mapped[User | None] = relationship(foreign_keys=[issued_by_id])
 
-    @property
+    @hybrid_property
     def is_active(self) -> bool:
         """Counts towards the penalty threshold: neither revoked nor paid off."""
         return self.revoked_at is None and self.redeemed_by_assignment_id is None
+
+    @is_active.inplace.expression
+    @classmethod
+    def _is_active_expression(cls) -> ColumnElement[bool]:
+        """`is_active` as SQL, for queries."""
+        return and_(cls.revoked_at.is_(None), cls.redeemed_by_assignment_id.is_(None))

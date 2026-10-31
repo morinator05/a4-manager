@@ -4,6 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
+from urllib.parse import urlencode
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -16,7 +17,7 @@ from app.config import settings
 from app.db import SessionLocal
 from app.deps import LoginRequired
 from app.services import users
-from app.services.jobs import run_scheduled_job
+from app.services.jobs import JOB_MINUTE, run_scheduled_job
 from app.web import router
 
 logging.basicConfig(level=logging.INFO)
@@ -25,8 +26,11 @@ log = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """On startup create the first Flursprecher if configured, then run the daily job now
-    and on a schedule while the app is up."""
+    """Set up on startup, run the daily job while the app is up.
+
+    Creates the first Flursprecher if configured, then runs the daily job now and on a
+    schedule.
+    """
     async with SessionLocal() as session:
         # Invalid ADMIN_* settings stop the startup, like a missing SECRET_KEY does.
         admin = await users.create_initial_admin(session)
@@ -38,8 +42,9 @@ async def lifespan(app: FastAPI):
         scheduler = AsyncIOScheduler(timezone=settings.tz)
         # Shortly after midnight (new day/week) and right after the deadline hour.
         for hour in sorted({0, settings.deadline_hour}):
-            trigger = CronTrigger(hour=hour, minute=5, timezone=settings.tz)
-            scheduler.add_job(run_scheduled_job, trigger)
+            trigger = CronTrigger(hour=hour, minute=JOB_MINUTE, timezone=settings.tz)
+            # A run that is late (busy event loop, suspended machine) still happens, once.
+            scheduler.add_job(run_scheduled_job, trigger, misfire_grace_time=3600, coalesce=True)
         scheduler.start()
         await run_scheduled_job()
     yield
@@ -53,6 +58,7 @@ app.add_middleware(
     secret_key=settings.secret_key,
     session_cookie="a4_session",
     same_site="lax",
+    https_only=settings.session_https_only,
     max_age=int(timedelta(days=90).total_seconds()),
 )
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
@@ -62,4 +68,5 @@ app.include_router(router)
 @app.exception_handler(LoginRequired)
 async def redirect_to_login(request: Request, exc: LoginRequired):
     """Send people who aren't logged in to the login page, and back here afterwards."""
-    return RedirectResponse(f"/login?next={request.url.path}", status_code=303)
+    here = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+    return RedirectResponse(f"/login?{urlencode({'next': here})}", status_code=303)

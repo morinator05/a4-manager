@@ -1,1 +1,21 @@
 {% macro slot_dates(slot) %}{{ slot.start_date|weekday }} {{ slot.start_date|short_date }}{% if slot.end_date != slot.start_date %}–{{ slot.end_date|short_date }}{% endif %}{% endmacro %}
+
+{# Status tag of an assignment. A disputed one is shown as "beanstandet", not "verpasst". #}
+{% macro status_badge(a) %}
+  {%- if a.disputed_at %}<span class="badge s-missed">beanstandet</span>
+  {%- else %}<span class="badge s-{{ a.status.value }}">{{ a.status.label }}</span>{% endif %}
+{%- endmacro %}
+
+{% macro strike_status(s) %}
+  {%- if s.revoked_at %}<span class="badge s-excused">zurückgenommen</span>
+  {%- elif s.redeemed_by_assignment_id %}<span class="badge s-excused">abgearbeitet</span>
+  {%- else %}<span class="badge s-missed">aktiv</span>{% endif %}
+{%- endmacro %}
+
+{% macro penalty_tag() %}<span class="penalty">(Strafe)</span>{% endmacro %}
+
+{# The people of a preview row: user ids, or `Role`s for the people of an open slot. #}
+{% macro preview_people(people, users_by_id) %}
+  {%- for p in people %}{% if p is role %}{{ render_role(p) }}{% else %}{{ render_person(users_by_id[p]) }}{% endif %}{% if not loop.last %}, {% endif %}
+  {%- else %}<span class="muted">–</span>{% endfor %}
+{%- endmacro %}

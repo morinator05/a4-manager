@@ -182,4 +182,3 @@ details.resident.inactive > summary { opacity: .6; }
 .panel form.row label:not(.check) { flex: 2 1 9rem; }
 .panel form.row label.short { flex: 1 1 5rem; }
 .panel form.row label:not(.check) input { width: 100%; }
-.panel p { margin: 0; }

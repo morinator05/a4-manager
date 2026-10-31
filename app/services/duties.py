@@ -4,7 +4,7 @@ Slots are only created ("materialized") for the current day and week. Future one
 simulated for the preview, so they always reflect the latest balances and away periods.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
 from fractions import Fraction
 
@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
+from app.db import lock_schedule
 from app.models import Assignment, Duty, Slot, SlotEligible, Status, User
 from app.services import scheduling, strikes
 from app.services.scheduling import Balance, Candidate, Role
@@ -175,15 +176,18 @@ async def _assign_from_eligible(
 
 async def fill_current_slots(session: AsyncSession, today: date) -> None:
     """Make sure today's kitchen duty and this week's trash duty have their people."""
+    await lock_schedule(session)
     for duty in Duty:
         await materialize_slot(session, duty, today)
 
 
 async def replace_unavailable_people(session: AsyncSession, today: date) -> None:
-    """Replace people in current/upcoming slots who became unavailable.
+    """Replace people in current slots who were paused or deleted, and drop them from the
+    slots' eligible people (so they get no share of those slots).
 
-    Called after someone marks themselves away, is deactivated or deleted.
+    Slots somebody already did stay as they are.
     """
+    await lock_schedule(session)
     candidates = {c.id: c for c in await load_candidates(session)}
     rooms = {uid: c.room for uid, c in candidates.items()}
 
@@ -200,19 +204,23 @@ async def replace_unavailable_people(session: AsyncSession, today: date) -> None
         )
     ).all()
     for slot in slots:
+        if slot.claimed_assignment is not None:
+            continue
         gone = [
             a
             for a in slot.assignments
             if a.status is Status.pending and not is_available(a.user_id, slot)
         ]
-        if not gone:
-            continue
         for a in gone:
             slot.assignments.remove(a)
             await session.delete(a)
-        slot.eligible = [e for e in slot.eligible if is_available(e.user_id, slot)]
+        # Moved-out users (None) keep their row, so nobody inherits their share.
+        slot.eligible = [
+            e for e in slot.eligible if e.user_id is None or is_available(e.user_id, slot)
+        ]
         await session.flush()
-        await _assign_from_eligible(session, slot, len(gone), rooms)
+        if gone:
+            await _assign_from_eligible(session, slot, len(gone), rooms)
 
 
 async def process_overdue_duties(session: AsyncSession, now: datetime) -> list[Assignment]:
@@ -273,34 +281,40 @@ def can_mark_done(a: Assignment, actor: User, now: datetime) -> bool:
     return a.user_id == actor.id
 
 
-async def _revoke_strikes(session: AsyncSession, a: Assignment, now: datetime) -> None:
-    """Take back the strikes given for this duty (it was done or excused after all)."""
-    for s in await strikes.get_strikes_for_assignment(session, a.id):
-        if s.is_active:
-            s.revoked_at = now
+async def _reload_slot_people(session: AsyncSession, a: Assignment) -> None:
+    """Re-read who is on `a`'s slot and their statuses, after taking the schedule lock.
+
+    Another request may have changed them while this one waited for the lock.
+    """
+    await session.refresh(a.slot, ["assignments"])
+    if a not in a.slot.assignments:
+        raise DutyError("Dienst nicht gefunden")
+    for x in a.slot.assignments:
+        await session.refresh(x, ["status", "disputed_at"])
 
 
 async def mark_duty_done(session: AsyncSession, a: Assignment, actor: User, now: datetime) -> None:
     """`a`'s person claims the slot; everybody else on it is off the hook.
 
     Also revokes strikes already given for the slot (the Flursprecher may mark it done
-    after the deadline).
+    after the deadline), except a disputed claimer's: they claimed it without doing it.
     """
     # Both partners may click at the same time: the second waits here for the first, then
     # sees the slot as claimed.
-    await session.execute(select(Slot.id).where(Slot.id == a.slot_id).with_for_update())
-    for x in a.slot.assignments:
-        await session.refresh(x, ["status"])
+    await lock_schedule(session)
+    await _reload_slot_people(session, a)
     if not can_mark_done(a, actor, now):
         raise DutyError("Du kannst diesen Dienst nicht abhaken")
-    await _revoke_strikes(session, a, now)
+    await strikes.revoke_strikes_for_assignment(session, a.id, now)
     a.status = Status.done
     a.completed_at = now
     a.completed_by_id = actor.id
     a.disputed_at = None
     for other in a.slot.assignments:
-        if other is not a and other.status in (Status.pending, Status.missed):
-            await _revoke_strikes(session, other, now)
+        if other is a or other.disputed_at is not None:
+            continue
+        if other.status in (Status.pending, Status.missed):
+            await strikes.revoke_strikes_for_assignment(session, other.id, now)
             other.status = Status.covered
     await session.flush()
 
@@ -309,7 +323,11 @@ async def excuse_duty(session: AsyncSession, a: Assignment, actor: User, now: da
     """Admin only: nobody is blamed, but the person gets no credit either."""
     if not actor.is_admin:
         raise DutyError("Nur der Flursprecher kann Dienste entschuldigen")
-    await _revoke_strikes(session, a, now)
+    await lock_schedule(session)
+    await _reload_slot_people(session, a)
+    if a.status not in (Status.pending, Status.missed):
+        raise DutyError("Nur offene oder verpasste Dienste können entschuldigt werden")
+    await strikes.revoke_strikes_for_assignment(session, a.id, now)
     a.status = Status.excused
     a.completed_at = now
     a.completed_by_id = actor.id
@@ -324,6 +342,8 @@ async def dispute_duty(session: AsyncSession, a: Assignment, actor: User, now: d
     """
     if not actor.is_admin:
         raise DutyError("Nur der Flursprecher kann Dienste beanstanden")
+    await lock_schedule(session)
+    await _reload_slot_people(session, a)
     if a.status is not Status.done:
         raise DutyError("Nur erledigte Dienste können beanstandet werden")
     a.status = Status.missed
@@ -347,7 +367,7 @@ class PreviewEntry:
     start: date
     end: date
     # User ids; `Role`s stand for the people on a slot that isn't done yet.
-    user_ids: list[int | Role]
+    people: list[int | Role]
     is_penalty: bool = False
 
 
@@ -386,29 +406,19 @@ async def build_preview(
             entry = PreviewEntry(
                 start=slot_start,
                 end=slot_end,
-                user_ids=[a.user_id for a in s.assignments if a.user_id is not None],
+                people=[a.user_id for a in s.assignments if a.user_id is not None],
                 is_penalty=s.is_penalty,
             )
         else:
-            entry = PreviewEntry(start=slot_start, end=slot_end, user_ids=[])
+            entry = PreviewEntry(start=slot_start, end=slot_end, people=[])
             to_simulate.append(entry)
         entries.append(entry)
         day += step
 
-    earlier = await session.scalars(
-        select(Slot)
-        .where(
-            Slot.duty == duty,
-            Slot.is_penalty.is_(False),
-            Slot.start_date < first,
-            Slot.assignments.any(Assignment.status == Status.pending),
-        )
-        .options(selectinload(Slot.assignments))
-    )
     open_slots = [
         (s.start_date, [a.user_id for a in s.assignments if a.status is Status.pending])
-        for s in earlier
-        if s.claimed_assignment is None
+        for s in await load_open_slots_before(session, duty, first)
+        if not s.is_penalty
     ]
 
     planned = scheduling.plan_upcoming_slots(
@@ -418,6 +428,45 @@ async def build_preview(
         n,
         open_slots,
     )
-    for entry, user_ids in zip(to_simulate, planned, strict=True):
-        entry.user_ids = user_ids
+    for entry, people in zip(to_simulate, planned, strict=True):
+        entry.people = people
     return entries
+
+
+def find_roles_after_preview(preview: list[PreviewEntry]) -> list[Role]:
+    """The "did it" roles that don't come up again within `preview`.
+
+    Whoever does today's duty is usually up only after the preview ends; the dashboard says
+    so below it.
+    """
+    roles = [p for e in preview for p in e.people if isinstance(p, Role)]
+    return [
+        r
+        for r in dict.fromkeys(replace(p, did_it=True) for p in roles if not p.did_it)
+        if r not in roles
+    ]
+
+
+async def load_open_slots_before(session: AsyncSession, duty: Duty, day: date) -> list[Slot]:
+    """Slots of `duty` starting before `day` that nobody did yet but someone still can."""
+    slots = await session.scalars(
+        select(Slot)
+        .where(
+            Slot.duty == duty,
+            Slot.start_date < day,
+            Slot.assignments.any(Assignment.status == Status.pending),
+        )
+        .options(selectinload(Slot.assignments).selectinload(Assignment.user))
+        .order_by(Slot.start_date)
+    )
+    return [s for s in slots if s.claimed_assignment is None]
+
+
+async def load_late_slots(session: AsyncSession, now: datetime) -> list[Slot]:
+    """Earlier slots that are over but can still be marked done (their deadline is ahead)."""
+    return [
+        s
+        for duty in Duty
+        for s in await load_open_slots_before(session, duty, get_slot_bounds(duty, now.date())[0])
+        if now < get_deadline(s)
+    ]

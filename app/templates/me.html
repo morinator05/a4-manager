@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "partials/macros.html" import slot_dates %}
+{% from "partials/macros.html" import slot_dates, status_badge, strike_status, penalty_tag with context %}
 {% block content %}
 <h1>{{ render_person(user) }}</h1>
 {% if not user.active %}<p class="flash error">Du bist inaktiv und wirst nicht eingeteilt.</p>{% endif %}
@@ -40,9 +40,7 @@
     <tr>
       <td>{{ s.created_at|date_time }}</td>
       <td>{{ s.reason }}</td>
-      <td class="end">{% if s.revoked_at %}<span class="badge s-excused">zurückgenommen</span>
-          {% elif s.redeemed_by_assignment_id %}<span class="badge s-excused">abgearbeitet</span>
-          {% else %}<span class="badge s-missed">aktiv</span>{% endif %}</td>
+      <td class="end">{{ strike_status(s) }}</td>
     </tr>
   {% else %}<tr><td class="muted" colspan="3">Keine Strikes.</td></tr>{% endfor %}
 </table></div>
@@ -53,8 +51,8 @@
   {% for a in recent_duties %}
     <tr>
       <td>{{ slot_dates(a.slot) }}</td>
-      <td>{{ a.slot.duty.label }}{% if a.slot.is_penalty %} <span class="penalty">(Strafe)</span>{% endif %}</td>
-      <td class="end">{% include "partials/status.html" %}</td>
+      <td>{{ a.slot.duty.label }}{% if a.slot.is_penalty %} {{ penalty_tag() }}{% endif %}</td>
+      <td class="end">{{ status_badge(a) }}</td>
     </tr>
   {% else %}<tr><td class="muted" colspan="3">Noch keine Dienste.</td></tr>{% endfor %}
 </table></div>

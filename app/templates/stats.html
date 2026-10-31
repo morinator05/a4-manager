@@ -17,9 +17,9 @@
       <td>{{ kb|debt }}</td>
       <td>{{ counts.get((u.id, Duty.trash, Status.done), 0) }}</td>
       <td>{{ tb|debt }}</td>
-      <td>{{ counts.get((u.id, Duty.trash, "penalty"), 0) }}</td>
+      <td>{{ counts.get((u.id, Duty.trash, penalty), 0) }}</td>
       {# Green without strikes, red one strike before the penalty week, orange in between. #}
-      {% set n = active[u.id] %}
+      {% set n = active.get(u.id, 0) %}
       <td class="strikes {{ 'ok' if n == 0 else ('bad' if n >= strike_threshold - 1 else 'warn') }}">{{ n }} / {{ strike_threshold }}</td>
     </tr>
   {% endfor %}

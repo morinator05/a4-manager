@@ -61,8 +61,9 @@
 <section class="card help" id="abwesend">
   <h2>Abwesend</h2>
   <p>Bist du weg, z.&nbsp;B. im Urlaub, trag es unter <a href="/me">Mein Profil</a> → Abwesenheit ein.
-    In der Zeit wirst du nicht eingeteilt, und es zählt nicht gegen dich. Dienste, die in die Zeit
-    fallen, übernimmt sofort jemand anderes.</p>
+    In der Zeit wirst du nicht eingeteilt, und es zählt nicht gegen dich. Trag es vorher ein: Ein Dienst,
+    der schon läuft, bleibt deiner; kannst du ihn nicht machen, kann der Flursprecher ihn entschuldigen.
+    Ein Straf-Mülldienst in der Zeit wird auf eine spätere Woche verschoben.</p>
 </section>
 
 <section class="card help" id="schuld">
@@ -79,7 +80,7 @@
   <p><strong>Auszug und Einzug</strong>: Den alten Bewohner löschen und die neue Person hinzufügen.
     Nicht umbenennen, sonst übernimmt sie Verlauf und Strikes.</p>
   <p><strong>Entschuldigen</strong> und <strong>Beanstanden</strong>: siehe <a href="#status">Status</a>.</p>
-  <p><strong>Tagesjob</strong>: läuft automatisch um 00:05 und {{ deadline_hour }}:05 Uhr, trägt verpasste
+  <p><strong>Tagesjob</strong>: läuft automatisch um 00:{{ "%02d"|format(job_minute) }} und {{ deadline_hour }}:{{ "%02d"|format(job_minute) }} Uhr, trägt verpasste
     Dienste ein und teilt die nächsten ein.</p>
 </section>
 {% endif %}
