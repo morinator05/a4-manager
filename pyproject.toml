@@ -15,6 +15,7 @@ dependencies = [
     "pydantic-settings>=2.16.1",
     "python-multipart>=0.0.32",
     "sqlalchemy[asyncio]>=2.1.6",
+    "tzdata>=2026.5",
 ]
 
 [dependency-groups]

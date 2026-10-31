@@ -41,3 +41,20 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --locked
       - run: uv run pytest
+      # Tests build the tables from the models; check the migrations build the same ones.
+      - name: Migrations match the models
+        env:
+          DATABASE_URL: postgresql+asyncpg://a4:a4@localhost:5432/a4_migrations
+          SECRET_KEY: ci-secret-key-that-is-long-enough-0123456789
+        run: |
+          PGPASSWORD=a4 psql -h localhost -U a4 -d a4_test -c "CREATE DATABASE a4_migrations"
+          uv run alembic upgrade head
+          uv run alembic check
+          uv run alembic downgrade base
+          uv run alembic upgrade head
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker build .
